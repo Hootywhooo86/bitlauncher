@@ -65,6 +65,11 @@ class AddItemActivity : Activity() {
             return
         }
         val prefs = Prefs(this)
+        if (prefs.layoutLocked) {
+            Pixel.say(this, "Your home layout is locked, so nothing can be added. Unlock it to add this.")
+            finish()
+            return
+        }
         val accent = prefs.accent
         val density = resources.displayMetrics.densityDpi
 

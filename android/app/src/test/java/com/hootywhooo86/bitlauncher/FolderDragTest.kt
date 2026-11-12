@@ -153,4 +153,18 @@ class FolderDragTest {
         // Nothing re-ordered on the way out.
         assertEquals(apps, savedOrder())
     }
+
+    @Test
+    fun aLockedLayoutDoesntMove() {
+        Prefs(RuntimeEnvironment.getApplication()).layoutLocked = true
+        val (home, folder) = openFolder()
+        drag(home, slotCentre(folder, 0), slotCentre(folder, 2))
+        assertEquals(apps, folder.icons().map { it.tagItem })
+        assertEquals(apps, savedOrder())
+        // Unlocked again, the same drag works.
+        Prefs(RuntimeEnvironment.getApplication()).layoutLocked = false
+        folder.locked = false
+        drag(home, slotCentre(folder, 0), slotCentre(folder, 2))
+        assertEquals(apps[0], savedOrder()[2])
+    }
 }

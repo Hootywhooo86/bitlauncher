@@ -629,6 +629,10 @@ class LauncherActivity : Activity() {
     }
 
     private fun showFolderMenu(view: AppIconView, folder: FolderItem) {
+        if (prefs.layoutLocked) {
+            menu.show(view, listOf(PixelMenu.Entry("Open") { openFolder(folder) }, PixelMenu.Entry("Layout locked") { locked() }), view.iconRect())
+            return
+        }
         val entries = mutableListOf(
             PixelMenu.Entry("Open") { openFolder(folder) },
             PixelMenu.Entry("Style") { showFolderStyles(view, folder) },
@@ -759,6 +763,7 @@ class LauncherActivity : Activity() {
 
     private fun openPages() {
         menu.dismiss()
+        if (locked()) return
         if (!::pageOverview.isInitialized) {
             pageOverview = PageOverview(this)
             root.addView(pageOverview, FrameLayout.LayoutParams(-1, -1))
@@ -1136,6 +1141,7 @@ class LauncherActivity : Activity() {
     }
 
     private fun showTodayWidgetMenu(view: View, id: Int) {
+        if (locked()) return
         fun edit(change: (MutableList<Triple<Int, String, Int>>, Int) -> Unit) {
             val list = prefs.todayWidgets.toMutableList()
             val i = list.indexOfFirst { it.first == id }
@@ -1520,6 +1526,7 @@ class LauncherActivity : Activity() {
         val cell = Pixel.dpi(this, prefs.iconDp() + if (folder.labels) 40 else 20)
         folderView.setAccent(prefs.accent, folder.color)
         folderView.setInventory(folder.style == "bag")
+        folderView.locked = prefs.layoutLocked
         folderView.setIcons(folder.apps.map { key -> AppIconView(this).also { bindIcon(it, key, Source.FOLDER, folder = folder) } }, cell)
         // Dragged to a new spot inside: that's the folder's order now (and its cover, if the first four changed).
         folderView.onReordered = { icons ->
@@ -1575,15 +1582,34 @@ class LauncherActivity : Activity() {
         // The page under the finger: the right one of a pair if it was on the right half.
         val page = workspace.currentPage + if (workspace.panes > 1 && x > workspace.width / 2f) 1 else 0
         val labelsHere = page !in layout.unlabelledPages
+        val at = Rect(x.toInt(), y.toInt(), x.toInt(), y.toInt())
+        val switchLayout = PixelMenu.Entry(if (mode == Shift.WORK) "Switch to Home layout" else "Switch to Work layout") {
+            val next = if (mode == Shift.WORK) Shift.HOME else Shift.WORK
+            Shift.hold(prefs, next)
+            appliedPrefs = prefs.version
+            switchMode(next)
+        }
+        if (prefs.layoutLocked) {
+            menu.show(workspace, listOf(
+                PixelMenu.Entry("Unlock layout") {
+                    prefs.layoutLocked = false
+                    folderView.locked = false
+                    Pixel.say(this, "Layout unlocked.")
+                },
+                switchLayout,
+                PixelMenu.Entry("Settings") { startActivity(Intent(this, SettingsActivity::class.java)) },
+            ), at)
+            return
+        }
         menu.show(workspace, listOf(
             PixelMenu.Entry("Widgets") { showWidgetPicker() },
             PixelMenu.Entry("Pages") { openPages() },
-            PixelMenu.Entry(if (mode == Shift.WORK) "Switch to Home layout" else "Switch to Work layout") {
-                val next = if (mode == Shift.WORK) Shift.HOME else Shift.WORK
-                Shift.hold(prefs, next)
-                appliedPrefs = prefs.version
-                switchMode(next)
+            PixelMenu.Entry("Lock layout") {
+                prefs.layoutLocked = true
+                folderView.locked = true
+                Pixel.say(this, "Layout locked. Apps still open as normal.")
             },
+            switchLayout,
             PixelMenu.Entry(if (labelsHere) "Hide labels on this page" else "Show labels on this page") {
                 while (page >= layout.pages.size) layout.pages.add(mutableListOf())
                 if (labelsHere) layout.unlabelledPages.add(page) else layout.unlabelledPages.remove(page)
@@ -1597,13 +1623,27 @@ class LauncherActivity : Activity() {
                 }
             },
             PixelMenu.Entry("Settings") { startActivity(Intent(this, SettingsActivity::class.java)) },
-        ), Rect(x.toInt(), y.toInt(), x.toInt(), y.toInt()))
+        ), at)
+    }
+
+    /** True (and says so) if the layout is locked and can't be changed right now. */
+    private fun locked(): Boolean {
+        if (!prefs.layoutLocked) return false
+        Pixel.say(this, "The layout is locked. Unlock it from the home screen's menu (hold empty space).")
+        return true
     }
 
     private fun showAppMenu(view: AppIconView, key: AppKey, source: Source, item: Item?, folder: FolderItem?, dockIndex: Int) {
         val entries = mutableListOf<PixelMenu.Entry>()
         val pinned = PinnedShortcuts.isShortcut(key)
         if (!pinned) entries += shortcutEntries(key)
+        if (prefs.layoutLocked) {
+            // Locked: open its shortcuts or info, nothing that changes home.
+            if (!pinned) entries += PixelMenu.Entry("App info") { apps.openAppInfo(key, null) }
+            entries += PixelMenu.Entry("Layout locked") { locked() }
+            menu.show(view, entries, view.iconRect())
+            return
+        }
         when (source) {
             Source.DRAWER -> {
                 entries += PixelMenu.Entry("Add to home") {
@@ -1730,6 +1770,7 @@ class LauncherActivity : Activity() {
 
     private fun startDrag(view: View, info: DragInfo) {
         menu.dismiss()
+        if (locked()) return
         val shadow = (view as? AppIconView)?.shadowBuilder() ?: View.DragShadowBuilder(view)
         if (info.source == Source.DRAWER) {
             // Hide at once: the search box would otherwise take the drop as text mid-animation.
@@ -2038,6 +2079,7 @@ class LauncherActivity : Activity() {
 
     /** [shownId] is the widget the finger is on (for stacks: the one showing). */
     private fun showWidgetMenu(view: View, item: WidgetItem, shownId: Int = item.widgetId) {
+        if (locked()) return
         val entries = mutableListOf(
             PixelMenu.Entry("Resize") { startResize(item) },
             PixelMenu.Entry("Stack another widget") {

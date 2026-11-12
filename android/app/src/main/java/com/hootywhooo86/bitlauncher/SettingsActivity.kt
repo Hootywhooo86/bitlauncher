@@ -73,6 +73,13 @@ class SettingsActivity : Activity() {
         })
         body.addView(note("Changing size never loses anything. Icons that don't fit move to the next free spot."))
 
+        section("LOCK LAYOUT")
+        body.addView(note("Locked, nothing on home can be moved, removed or added. Apps, folders and widgets still work."))
+        row(listOf(
+            choice("LOCKED", prefs.layoutLocked) { changed { prefs.layoutLocked = true } },
+            choice("UNLOCKED", !prefs.layoutLocked) { changed { prefs.layoutLocked = false } },
+        ))
+
         section("ICON SIZE")
         row(listOf("SMALL", "MEDIUM", "LARGE").mapIndexed { i, label ->
             choice(label, prefs.iconSize == i) { changed { prefs.iconSize = i } }

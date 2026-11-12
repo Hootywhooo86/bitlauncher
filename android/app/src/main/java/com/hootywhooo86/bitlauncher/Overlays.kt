@@ -407,6 +407,9 @@ class FolderView(context: Context) : FrameLayout(context) {
     /** The dragged app went past the panel's edge: hand it to the home screen (or dock). */
     var onDragLeave: ((AppIconView) -> Unit)? = null
 
+    /** The home layout is locked: apps can be opened but not moved. */
+    var locked = false
+
     private var dragging: AppIconView? = null
     private var startOrder: List<View> = emptyList()
     private var grabX = 0f // where on the icon the finger is, so it doesn't jump
@@ -472,7 +475,8 @@ class FolderView(context: Context) : FrameLayout(context) {
         for (icon in icons) {
             grid.addView(icon)
             grid.order.add(icon)
-            icon.onHoldDrag = { v -> beginDrag(v); true }
+            // Locked layout: no dragging inside; the hold falls through and says so.
+            icon.onHoldDrag = { v -> if (locked) false else { beginDrag(v); true } }
             icon.onHoldMove = { x, y -> dragTo(v = icon, rawX = x, rawY = y) }
             icon.onHoldEnd = { _, _, _ -> endDrag() }
         }
