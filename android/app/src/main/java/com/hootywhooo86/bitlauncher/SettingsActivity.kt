@@ -353,6 +353,11 @@ class SettingsActivity : Activity() {
             if (prefs.lockBlocked) {
                 body.addView(note("Your phone stopped the pixel lock screen from opening last time. Keeping bitlauncher as your home app usually fixes this; some phones never allow it."))
             }
+            body.addView(Pixel.label(this, "LOOK", 9f, Pixel.MUTED).apply { setPadding(0, Pixel.dpi(context, 12), 0, Pixel.dpi(context, 6)) })
+            for (look in LockLooks.ALL) {
+                body.addView(choice(look.name.uppercase(), prefs.lockStyle == look.key) { changed { prefs.lockStyle = look.key } }.full())
+            }
+            body.addView(note((LockLooks.ALL.firstOrNull { it.key == prefs.lockStyle } ?: LockLooks.ALL[0]).about + " PREVIEW below shows it."))
             body.addView(Pixel.label(this, "SHOW ON LOCK SCREEN", 9f, Pixel.MUTED).apply { setPadding(0, Pixel.dpi(context, 12), 0, Pixel.dpi(context, 6)) })
             row(listOf("APP NAMES", "TITLES", "FULL TEXT").mapIndexed { i, label ->
                 choice(label, prefs.lockDetail == i) { changed { prefs.lockDetail = i } }

@@ -179,6 +179,11 @@ class Prefs(context: Context) {
         get() = sp.getString("popups", "home")!!
         set(v) = sp.edit().putString("popups", v).apply()
 
+    /** How the lock screen looks (see LockLooks.ALL). */
+    var lockStyle: String
+        get() = sp.getString("lockStyle", "classic")!!
+        set(v) = sp.edit().putString("lockStyle", v).apply()
+
     var chargeStyle: String
         get() = sp.getString("chargeStyle", "battery")!!
         set(v) = sp.edit().putString("chargeStyle", v).apply()
@@ -213,6 +218,7 @@ class Prefs(context: Context) {
         .put("hidden", JSONArray(hidden.toList()))
         .put("theme", theme)
         .put("chargeStyle", chargeStyle)
+        .put("lockStyle", lockStyle)
         .put("swipeDown", swipeDown)
         .put("popups", popups)
         .put("layoutLocked", layoutLocked)
@@ -239,6 +245,7 @@ class Prefs(context: Context) {
         lockDetail = o.optInt("lockDetail", lockDetail)
         theme = o.optString("theme", theme)
         chargeStyle = o.optString("chargeStyle", chargeStyle)
+        lockStyle = o.optString("lockStyle", lockStyle)
         swipeDown = o.optString("swipeDown", swipeDown)
         popups = o.optString("popups", popups)
         layoutLocked = o.optBoolean("layoutLocked", layoutLocked)

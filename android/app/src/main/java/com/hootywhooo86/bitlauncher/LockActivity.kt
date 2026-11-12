@@ -181,8 +181,11 @@ class LockActivity : Activity() {
         // Back does nothing here: the way out is the unlock swipe.
     }
 
+    private val look get() = prefs.lockStyle
+
     private fun build(): View {
         val accent = prefs.accent
+        val look = look
         val root = SwipeUpFrame(this) { unlock(null) }
         root.setBackgroundColor(Pixel.BG)
         // The home scene behind the lock screen too, dimmed so text stays readable.
@@ -207,20 +210,56 @@ class LockActivity : Activity() {
         clock = PixelClockView(this, blink = true).apply { this.accent = accent }
         // On a big screen (an unfolded Fold) the clock and cards keep a readable size.
         val screenW = resources.displayMetrics.widthPixels
-        val clockW = minOf(screenW - Pixel.dpi(this, 48), Pixel.dpi(this, 400))
         listW = minOf(screenW - Pixel.dpi(this, 40), Pixel.dpi(this, 520))
+        var clockW = minOf(screenW - Pixel.dpi(this, 48), Pixel.dpi(this, 400))
+        var pocket: PocketDrawable? = null
+        when (look) {
+            "minimal" -> clockW = minOf(screenW - Pixel.dpi(this, 24), Pixel.dpi(this, 560))
+            "pocket" -> {
+                // The whole lock screen on a little console's LCD.
+                pocket = PocketDrawable(this, accent)
+                val bz = pocket.bezel
+                content.background = pocket
+                content.foreground = android.graphics.drawable.InsetDrawable(TextureDrawable(this, grid = true), bz - Pixel.dpi(this, 4), bz, bz, bz)
+                content.setPadding(bz + Pixel.dpi(this, 8), bz + Pixel.dpi(this, 14), bz + Pixel.dpi(this, 12), bz + Pixel.dpi(this, 14))
+                listW -= 2 * bz + Pixel.dpi(this, 20)
+                clockW = minOf(clockW, listW - Pixel.dpi(this, 16))
+            }
+            "arcade" -> content.addView(Pixel.label(this, "PLAYER 1", 12f, accent).apply {
+                gravity = Gravity.CENTER
+                setPadding(0, 0, 0, Pixel.dpi(context, 16))
+            }, LinearLayout.LayoutParams(-1, -2))
+        }
         content.addView(clock, LinearLayout.LayoutParams(clockW, -2))
         date = Pixel.label(this, "", 11f, Pixel.MUTED).apply {
             gravity = Gravity.CENTER
             setPadding(0, Pixel.dpi(context, 14), 0, Pixel.dpi(context, 6))
         }
-        content.addView(date, LinearLayout.LayoutParams(-1, -2))
         info = Pixel.label(this, "", 10f, Pixel.INK).apply {
             gravity = Gravity.CENTER
             setLineSpacing(Pixel.dp(context, 6f), 1f)
             setPadding(0, Pixel.dpi(context, 6), 0, Pixel.dpi(context, 22))
         }
-        content.addView(info, LinearLayout.LayoutParams(-1, -2))
+        if (look == "rpg") {
+            // Date and weather in a status window.
+            val status = LinearLayout(this).apply {
+                orientation = LinearLayout.VERTICAL
+                background = RpgBoxDrawable(context, withAlpha(Pixel.PANEL, 240), Pixel.INK, withAlpha(Pixel.MUTED, 160))
+                val p = Pixel.dpi(context, 16)
+                setPadding(p, Pixel.dpi(context, 6), p + Pixel.dpi(context, 4), Pixel.dpi(context, 10))
+            }
+            date.setTextColor(Pixel.INK)
+            info.setPadding(0, Pixel.dpi(this, 2), 0, Pixel.dpi(this, 8))
+            status.addView(date, LinearLayout.LayoutParams(-1, -2))
+            status.addView(info, LinearLayout.LayoutParams(-1, -2))
+            content.addView(status, LinearLayout.LayoutParams(listW, -2).apply {
+                topMargin = Pixel.dpi(this@LockActivity, 18)
+                bottomMargin = Pixel.dpi(this@LockActivity, 18)
+            })
+        } else {
+            content.addView(date, LinearLayout.LayoutParams(-1, -2))
+            content.addView(info, LinearLayout.LayoutParams(-1, -2))
+        }
         charge = ChargeView(this).also { it.accent = accent; it.style = prefs.chargeStyle }
         chargeText = Pixel.label(this, "", 10f, Pixel.INK).apply { gravity = Gravity.CENTER }
         chargeBox = LinearLayout(this).apply {
@@ -234,9 +273,10 @@ class LockActivity : Activity() {
         content.addView(mediaBox, LinearLayout.LayoutParams(listW, -2))
         list = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
         content.addView(list, LinearLayout.LayoutParams(listW, -2))
-        root.addView(content, FrameLayout.LayoutParams(-1, -2, Gravity.TOP))
+        root.addView(content, if (pocket != null) FrameLayout.LayoutParams(-2, -2, Gravity.TOP or Gravity.CENTER_HORIZONTAL)
+            else FrameLayout.LayoutParams(-1, -2, Gravity.TOP))
 
-        hint = Pixel.label(this, "SWIPE UP TO UNLOCK", 10f, Pixel.INK).apply { gravity = Gravity.CENTER }
+        hint = Pixel.label(this, LockLooks.hint(look), 10f, Pixel.INK).apply { gravity = Gravity.CENTER }
         chevron = PixelChevron(this)
         val hintBox = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
@@ -249,6 +289,16 @@ class LockActivity : Activity() {
         }
         root.addView(hintBox, FrameLayout.LayoutParams(-1, -2, Gravity.BOTTOM))
         bob()
+        if (look == "arcade") {
+            // CRT scanlines over everything, and the prompt fades like an attract screen.
+            root.addView(ScreenTexture(this, grid = false), FrameLayout.LayoutParams(-1, -1))
+            if (Pixel.motion(this)) android.animation.ObjectAnimator.ofFloat(hint, View.ALPHA, 1f, 0.15f).apply {
+                duration = 700
+                repeatMode = android.animation.ValueAnimator.REVERSE
+                repeatCount = android.animation.ValueAnimator.INFINITE
+                start()
+            }
+        }
 
         root.setOnApplyWindowInsetsListener { _, insets ->
             val (top, bottom) = if (Build.VERSION.SDK_INT >= 30) {
@@ -286,7 +336,21 @@ class LockActivity : Activity() {
         if (!NotificationHub.hasAccess(this)) return // the lock screen still shows the clock
         val lines = NotePrivacy.lockLines(NotificationHub.snapshot(), prefs.lockDetail, NotificationHub.systemHidesSensitive(this))
         val accent = prefs.accent
-        val max = 5
+        if (look == "minimal") {
+            LockLooks.summary(lines) { NoteCards.appName(this, it) }?.let {
+                list.addView(Pixel.label(this, it, 10f, Pixel.INK).apply { gravity = Gravity.CENTER })
+            }
+            return
+        }
+        if (look == "arcade" && lines.isNotEmpty()) list.addView(Pixel.label(this, "HIGH SCORES", 11f, accent).apply {
+            gravity = Gravity.CENTER
+            setPadding(0, 0, 0, Pixel.dpi(context, 12))
+        })
+        val max = when (look) {
+            "rpg" -> 3
+            "pocket" -> 4
+            else -> 5
+        }
         lines.take(max).forEachIndexed { i, line -> list.addView(row(line, accent, animate, i)) }
         if (lines.size > max) {
             list.addView(Pixel.label(this, "+${lines.size - max} MORE APPS", 9f, Pixel.MUTED).apply {
@@ -297,12 +361,103 @@ class LockActivity : Activity() {
     }
 
     private fun row(line: LockLine, accent: Int, animate: Boolean, index: Int): View {
-        val pm = packageManager
-        val appName = try {
-            pm.getApplicationLabel(pm.getApplicationInfo(line.pkg, 0)).toString()
-        } catch (e: Exception) {
-            line.pkg
+        val appName = NoteCards.appName(this, line.pkg)
+        val row = when (look) {
+            "rpg" -> rpgRow(line, appName, accent)
+            "arcade" -> scoreRow(line, appName, accent, index)
+            "pocket" -> lcdRow(line, appName, accent)
+            else -> cardRow(line, appName, accent)
         }
+        if (animate && Pixel.motion(this)) {
+            // Rows slide up into place one after another.
+            row.translationY = (block * 5).toFloat()
+            row.alpha = 0f
+            row.animate().translationY(0f).alpha(1f).setStartDelay(index * 45L).setDuration(340)
+                .setInterpolator(Ease.enter).start()
+        }
+        return row
+    }
+
+    private fun spriteView(line: LockLine, sizeDp: Int): ImageView = ImageView(this).apply {
+        icons.getForPackage(line.pkg, line.user)?.let {
+            setImageDrawable(android.graphics.drawable.BitmapDrawable(resources, it).apply { paint.isFilterBitmap = false })
+        }
+        scaleType = ImageView.ScaleType.FIT_CENTER
+        layoutParams = LinearLayout.LayoutParams(Pixel.dpi(context, sizeDp), Pixel.dpi(context, sizeDp))
+    }
+
+    private fun plain(text: String, color: Int, size: Float, lines: Int): TextView = TextView(this).apply {
+        this.text = text
+        setTextColor(color)
+        textSize = size
+        maxLines = lines
+        ellipsize = android.text.TextUtils.TruncateAt.END
+    }
+
+    /** A dialog box: the app's name on a tab over the top edge, its words inside, a breathing ▼. */
+    private fun rpgRow(line: LockLine, appName: String, accent: Int): View {
+        val frame = FrameLayout(this).apply {
+            layoutParams = LinearLayout.LayoutParams(-1, -2).apply { bottomMargin = Pixel.dpi(context, 12) }
+            isClickable = true
+            setOnClickListener { unlock(line) }
+        }
+        val box = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            background = RpgBoxDrawable(context, withAlpha(Pixel.PANEL, 240), Pixel.INK, withAlpha(Pixel.MUTED, 160))
+            val p = Pixel.dpi(context, 18)
+            setPadding(p, Pixel.dpi(context, 20), p + Pixel.dpi(context, 4), Pixel.dpi(context, 16))
+            minimumHeight = Pixel.dpi(context, 72)
+        }
+        val said = listOfNotNull(line.title, line.text).joinToString(": ").ifBlank { if (line.count > 1) "${line.count} new notifications." else "A new notification." }
+        box.addView(plain(said, Pixel.INK, 14f, 3), LinearLayout.LayoutParams(-1, -2).apply { rightMargin = Pixel.dpi(this@LockActivity, 8) })
+        frame.addView(box, FrameLayout.LayoutParams(-1, -2).apply { topMargin = Pixel.dpi(this@LockActivity, 10) })
+        val tab = LinearLayout(this).apply {
+            gravity = Gravity.CENTER_VERTICAL
+            background = PanelDrawable(context, Pixel.PANEL, accent, shadow = false)
+            val p = Pixel.dpi(context, 6)
+            setPadding(p, p, p + Pixel.dpi(context, 2), p)
+            addView(spriteView(line, 16).apply { (layoutParams as LinearLayout.LayoutParams).rightMargin = Pixel.dpi(context, 6) })
+            addView(Pixel.label(context, if (line.count > 1) "${appName.uppercase()} x${line.count}" else appName.uppercase(), 9f, accent))
+        }
+        frame.addView(tab, FrameLayout.LayoutParams(-2, -2).apply { leftMargin = Pixel.dpi(this@LockActivity, 14) })
+        frame.addView(MoreArrow(this, Pixel.INK), FrameLayout.LayoutParams(-2, -2, Gravity.BOTTOM or Gravity.END).apply {
+            rightMargin = Pixel.dpi(this@LockActivity, 18)
+            bottomMargin = Pixel.dpi(this@LockActivity, 12)
+        })
+        return frame
+    }
+
+    /** One line of the high-score table: place, app, count, and a name if privacy allows. */
+    private fun scoreRow(line: LockLine, appName: String, accent: Int, index: Int): View = LinearLayout(this).apply {
+        gravity = Gravity.CENTER_VERTICAL
+        layoutParams = LinearLayout.LayoutParams(-1, -2)
+        val p = Pixel.dpi(context, 6)
+        setPadding(p, p, p, p)
+        isClickable = true
+        setOnClickListener { unlock(line) }
+        addView(Pixel.label(context, LockLooks.place(index), 10f, if (index == 0) accent else Pixel.MUTED), LinearLayout.LayoutParams(Pixel.dpi(context, 44), -2))
+        addView(spriteView(line, 18).apply { (layoutParams as LinearLayout.LayoutParams).rightMargin = Pixel.dpi(context, 8) })
+        addView(Pixel.label(context, appName.uppercase().take(12), 10f, Pixel.INK), LinearLayout.LayoutParams(0, -2, 1f))
+        line.title?.let { addView(Pixel.label(context, it.uppercase().take(10), 9f, Pixel.MUTED).apply { maxLines = 1 }, LinearLayout.LayoutParams(-2, -2).apply { rightMargin = Pixel.dpi(context, 10) }) }
+        addView(Pixel.label(context, "x${line.count.toString().padStart(2, '0')}", 10f, accent))
+    }
+
+    /** A line on the little LCD: sprite, app, and words, no cards. */
+    private fun lcdRow(line: LockLine, appName: String, accent: Int): View = LinearLayout(this).apply {
+        gravity = Gravity.CENTER_VERTICAL
+        layoutParams = LinearLayout.LayoutParams(-1, -2).apply { bottomMargin = Pixel.dpi(context, 10) }
+        isClickable = true
+        setOnClickListener { unlock(line) }
+        addView(spriteView(line, 24).apply { (layoutParams as LinearLayout.LayoutParams).rightMargin = Pixel.dpi(context, 10) })
+        val words = LinearLayout(context).apply { orientation = LinearLayout.VERTICAL }
+        words.addView(Pixel.label(context, if (line.count > 1) "${appName.uppercase()} x${line.count}" else appName.uppercase(), 9f, accent))
+        listOfNotNull(line.title, line.text).joinToString(": ").takeIf { it.isNotBlank() }?.let {
+            words.addView(plain(it, Pixel.INK, 13f, 2).apply { setPadding(0, Pixel.dpi(context, 3), 0, 0) })
+        }
+        addView(words, LinearLayout.LayoutParams(0, -2, 1f))
+    }
+
+    private fun cardRow(line: LockLine, appName: String, accent: Int): View {
         val row = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
@@ -341,13 +496,6 @@ class LockActivity : Activity() {
             })
         }
         row.addView(words, LinearLayout.LayoutParams(0, -2, 1f))
-        if (animate && Pixel.motion(this)) {
-            // Rows slide up into place one after another.
-            row.translationY = (block * 5).toFloat()
-            row.alpha = 0f
-            row.animate().translationY(0f).alpha(1f).setStartDelay(index * 45L).setDuration(340)
-                .setInterpolator(Ease.enter).start()
-        }
         return row
     }
 
