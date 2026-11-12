@@ -92,6 +92,21 @@ class SettingsActivity : Activity() {
             }
         })
 
+        section("HOME CLOCK")
+        row(listOf(
+            choice("ON", prefs.homeClock) { changed { prefs.homeClock = true } },
+            choice("OFF", !prefs.homeClock) { changed { prefs.homeClock = false } },
+        ))
+
+        section("ANIMATIONS")
+        body.addView(note("Chunky, stepped motion. Also off whenever your phone's \"remove animations\" is on."))
+        row(listOf(
+            choice("ON", prefs.animations) { changed { prefs.animations = true } },
+            choice("OFF", !prefs.animations) { changed { prefs.animations = false } },
+        ))
+
+        notificationSection(accent)
+
         section("APP DRAWER")
         row(listOf(
             choice("KEYBOARD ON OPEN", prefs.drawerKeyboard) { changed { prefs.drawerKeyboard = !prefs.drawerKeyboard } },
@@ -128,7 +143,52 @@ class SettingsActivity : Activity() {
     private fun changed(change: () -> Unit) {
         change()
         prefs.touch()
+        (application as? BitApp)?.syncLockScreen()
         render()
+    }
+
+    private fun notificationSection(accent: Int) {
+        val access = NotificationHub.hasAccess(this)
+        section("NOTIFICATIONS")
+        if (!access) {
+            body.addView(note("Dots on icons and notifications on the pixel lock screen need notification access. Notifications stay on your phone; nothing is saved or sent."))
+            body.addView(Pixel.button(this, "ALLOW NOTIFICATION ACCESS", accent) {
+                try {
+                    startActivity(Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS))
+                } catch (e: Exception) {
+                    Pixel.say(this, "Open Settings, then Notifications, then Device & app notifications, and allow bitlauncher.")
+                }
+            }.full())
+        }
+        body.addView(Pixel.label(this, "DOTS ON ICONS", 9f, Pixel.MUTED).apply { setPadding(0, Pixel.dpi(context, 8), 0, Pixel.dpi(context, 6)) })
+        row(listOf(
+            choice("ON", prefs.dots) { changed { prefs.dots = true } },
+            choice("OFF", !prefs.dots) { changed { prefs.dots = false } },
+        ))
+
+        section("LOCK SCREEN")
+        body.addView(note("A pixel clock and your notifications, shown in front of your phone's lock screen. Swipe up to unlock with your own PIN, pattern or fingerprint. It never replaces them."))
+        row(listOf(
+            choice("ON", prefs.lockScreen) { changed { prefs.lockScreen = true } },
+            choice("OFF", !prefs.lockScreen) { changed { prefs.lockScreen = false } },
+        ))
+        if (prefs.lockScreen) {
+            if (prefs.lockBlocked) {
+                body.addView(note("Your phone stopped the pixel lock screen from opening last time. Keeping bitlauncher as your home app usually fixes this; some phones never allow it."))
+            }
+            body.addView(Pixel.label(this, "SHOW ON LOCK SCREEN", 9f, Pixel.MUTED).apply { setPadding(0, Pixel.dpi(context, 12), 0, Pixel.dpi(context, 6)) })
+            row(listOf("APP NAMES", "TITLES", "FULL TEXT").mapIndexed { i, label ->
+                choice(label, prefs.lockDetail == i) { changed { prefs.lockDetail = i } }
+            })
+            if (prefs.lockDetail > 0 && NotificationHub.systemHidesSensitive(this)) {
+                body.addView(note("Your phone is set to hide sensitive notification content on the lock screen, so only app names show. Change that in your phone's notification settings."))
+            } else {
+                body.addView(note("Apps that mark a notification secret never show here, and private ones only show what the app allows."))
+            }
+            body.addView(Pixel.button(this, "PREVIEW", accent) {
+                startActivity(Intent(this, LockActivity::class.java))
+            }.full())
+        }
     }
 
     private fun section(title: String) {

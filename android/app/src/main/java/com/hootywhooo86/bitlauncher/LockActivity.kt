@@ -1,0 +1,391 @@
+package com.hootywhooo86.bitlauncher
+
+import android.app.Activity
+import android.app.Application
+import android.app.KeyguardManager
+import android.content.BroadcastReceiver
+import android.content.Context
+import android.content.Intent
+import android.content.IntentFilter
+import android.media.AudioManager
+import android.os.Build
+import android.os.Bundle
+import android.os.SystemClock
+import android.view.Gravity
+import android.view.MotionEvent
+import android.view.View
+import android.view.ViewConfiguration
+import android.view.WindowInsets
+import android.view.WindowManager
+import android.widget.FrameLayout
+import android.widget.ImageView
+import android.widget.LinearLayout
+import android.widget.TextView
+import java.text.DateFormat
+import java.util.Date
+
+/**
+ * Starts the pixel lock screen when the screen goes off, so it's waiting when the screen comes
+ * back on. Lives with the launcher's process; registered only while the setting is on.
+ */
+class BitApp : Application() {
+    private var registered = false
+    private var requestedAt = 0L
+
+    private val screen = object : BroadcastReceiver() {
+        override fun onReceive(context: Context, intent: Intent) {
+            when (intent.action) {
+                Intent.ACTION_SCREEN_OFF -> showLock()
+                Intent.ACTION_SCREEN_ON -> checkItOpened()
+            }
+        }
+    }
+
+    override fun onCreate() {
+        super.onCreate()
+        syncLockScreen()
+    }
+
+    /** Call after the setting changes. */
+    fun syncLockScreen() {
+        val want = Prefs(this).lockScreen
+        if (want && !registered) {
+            registerReceiver(screen, IntentFilter().apply {
+                addAction(Intent.ACTION_SCREEN_OFF)
+                addAction(Intent.ACTION_SCREEN_ON)
+            })
+            registered = true
+        } else if (!want && registered) {
+            unregisterReceiver(screen)
+            registered = false
+        }
+    }
+
+    private fun showLock() {
+        // The screen also goes off against your ear during a call. Never cover the call.
+        val audio = getSystemService(AudioManager::class.java)
+        if (audio.mode == AudioManager.MODE_IN_CALL || audio.mode == AudioManager.MODE_IN_COMMUNICATION) return
+        LockActivity.shownAt = 0L
+        requestedAt = SystemClock.elapsedRealtime()
+        try {
+            startActivity(Intent(this, LockActivity::class.java)
+                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_NO_ANIMATION or Intent.FLAG_ACTIVITY_SINGLE_TOP))
+        } catch (e: Exception) {
+            Prefs(this).lockBlocked = true
+        }
+    }
+
+    /** Android can quietly refuse to open it. If that happened, remember, so Settings can say so. */
+    private fun checkItOpened() {
+        if (requestedAt == 0L) return
+        val prefs = Prefs(this)
+        val opened = LockActivity.shownAt >= requestedAt
+        if (prefs.lockBlocked == opened) prefs.lockBlocked = !opened
+        requestedAt = 0L
+    }
+}
+
+/**
+ * The pixel lock screen: block clock, date, and notifications as the privacy setting allows.
+ * Swipe up to unlock; that hands over to the phone's own PIN, pattern or fingerprint.
+ * It sits in front of the system lock screen and never replaces it.
+ */
+class LockActivity : Activity() {
+    private lateinit var prefs: Prefs
+    private lateinit var icons: IconCache
+    private lateinit var content: LinearLayout
+    private lateinit var list: LinearLayout
+    private lateinit var hint: TextView
+    private lateinit var chevron: PixelChevron
+    private lateinit var clock: PixelClockView
+    private lateinit var date: TextView
+    private var block = 1
+    private val onNotes = { renderNotes(animate = true) }
+
+    /** Unlocked some other way (fingerprint sensor, face, smart lock): get out of the way. */
+    private val unlocked = object : BroadcastReceiver() {
+        override fun onReceive(context: Context, intent: Intent) {
+            finish()
+            overridePendingTransitionCompat()
+        }
+    }
+
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        prefs = Prefs(this)
+        icons = IconCache(this)
+        if (Build.VERSION.SDK_INT >= 27) {
+            setShowWhenLocked(true)
+        } else {
+            @Suppress("DEPRECATION")
+            window.addFlags(WindowManager.LayoutParams.FLAG_SHOW_WHEN_LOCKED)
+        }
+        if (Build.VERSION.SDK_INT >= 30) {
+            @Suppress("DEPRECATION")
+            window.setDecorFitsSystemWindows(false)
+        }
+        block = Pixel.dpi(this, 4)
+        setContentView(build())
+        shownAt = SystemClock.elapsedRealtime()
+        registerReceiver(unlocked, IntentFilter(Intent.ACTION_USER_PRESENT))
+    }
+
+    override fun onDestroy() {
+        super.onDestroy()
+        unregisterReceiver(unlocked)
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        shownAt = SystemClock.elapsedRealtime()
+        content.translationY = 0f
+        renderNotes(animate = false)
+    }
+
+    override fun onStart() {
+        super.onStart()
+        NotificationHub.listen(onNotes)
+        date.text = DateFormat.getDateInstance(DateFormat.FULL).format(Date()).uppercase()
+        clock.update(animate = false)
+        renderNotes(animate = true)
+    }
+
+    override fun onStop() {
+        super.onStop()
+        NotificationHub.unlisten(onNotes)
+    }
+
+    @Deprecated("Deprecated in Java")
+    override fun onBackPressed() {
+        // Back does nothing here: the way out is the unlock swipe.
+    }
+
+    private fun build(): View {
+        val accent = prefs.accent
+        val root = SwipeUpFrame(this) { unlock(null) }
+        root.setBackgroundColor(withAlpha(Pixel.BG, 225))
+        content = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            gravity = Gravity.CENTER_HORIZONTAL
+        }
+        root.snap = block
+        root.content = content
+
+        clock = PixelClockView(this, blink = true).apply { this.accent = accent }
+        content.addView(clock, LinearLayout.LayoutParams(-1, -2).apply {
+            leftMargin = Pixel.dpi(this@LockActivity, 24)
+            rightMargin = Pixel.dpi(this@LockActivity, 24)
+        })
+        date = Pixel.label(this, "", 11f, Pixel.MUTED).apply {
+            gravity = Gravity.CENTER
+            setPadding(0, Pixel.dpi(context, 14), 0, Pixel.dpi(context, 28))
+        }
+        content.addView(date, LinearLayout.LayoutParams(-1, -2))
+        list = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+        content.addView(list, LinearLayout.LayoutParams(-1, -2).apply {
+            leftMargin = Pixel.dpi(this@LockActivity, 20)
+            rightMargin = Pixel.dpi(this@LockActivity, 20)
+        })
+        root.addView(content, FrameLayout.LayoutParams(-1, -2, Gravity.TOP))
+
+        hint = Pixel.label(this, "SWIPE UP TO UNLOCK", 10f, Pixel.INK).apply { gravity = Gravity.CENTER }
+        chevron = PixelChevron(this)
+        val hintBox = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            gravity = Gravity.CENTER_HORIZONTAL
+            clipChildren = false // the chevron hops above its own box
+            clipToPadding = false
+            setPadding(0, block * 2, 0, 0)
+            addView(chevron, LinearLayout.LayoutParams(-1, block * 4).apply { bottomMargin = block * 2 })
+            addView(hint, LinearLayout.LayoutParams(-1, -2))
+        }
+        root.addView(hintBox, FrameLayout.LayoutParams(-1, -2, Gravity.BOTTOM))
+        bob()
+
+        root.setOnApplyWindowInsetsListener { _, insets ->
+            val (top, bottom) = if (Build.VERSION.SDK_INT >= 30) {
+                val b = insets.getInsets(WindowInsets.Type.systemBars())
+                b.top to b.bottom
+            } else {
+                @Suppress("DEPRECATION")
+                insets.systemWindowInsetTop to insets.systemWindowInsetBottom
+            }
+            (content.layoutParams as FrameLayout.LayoutParams).topMargin = top + Pixel.dpi(this, 48)
+            ((hint.parent as View).layoutParams as FrameLayout.LayoutParams).bottomMargin = bottom + Pixel.dpi(this, 24)
+            content.requestLayout()
+            insets
+        }
+        return root
+    }
+
+    /** The chevron hops a block up and down, once a second. Pixel-style, no tweening. */
+    private fun bob() {
+        if (!Pixel.motion(this)) return
+        val up = Runnable { chevron.translationY = -block.toFloat() }
+        val down = Runnable { chevron.translationY = 0f }
+        hint.post(object : Runnable {
+            override fun run() {
+                if (isFinishing) return
+                up.run()
+                hint.postDelayed(down, 500)
+                hint.postDelayed(this, 1000)
+            }
+        })
+    }
+
+    private fun renderNotes(animate: Boolean) {
+        list.removeAllViews()
+        if (!NotificationHub.hasAccess(this)) return // the lock screen still shows the clock
+        val lines = NotePrivacy.lockLines(NotificationHub.snapshot(), prefs.lockDetail, NotificationHub.systemHidesSensitive(this))
+        val accent = prefs.accent
+        val max = 5
+        lines.take(max).forEachIndexed { i, line -> list.addView(row(line, accent, animate, i)) }
+        if (lines.size > max) {
+            list.addView(Pixel.label(this, "+${lines.size - max} MORE APPS", 9f, Pixel.MUTED).apply {
+                gravity = Gravity.CENTER
+                setPadding(0, Pixel.dpi(context, 8), 0, 0)
+            })
+        }
+    }
+
+    private fun row(line: LockLine, accent: Int, animate: Boolean, index: Int): View {
+        val pm = packageManager
+        val appName = try {
+            pm.getApplicationLabel(pm.getApplicationInfo(line.pkg, 0)).toString()
+        } catch (e: Exception) {
+            line.pkg
+        }
+        val row = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            background = PanelDrawable(context, withAlpha(Pixel.PANEL, 235), withAlpha(Pixel.MUTED, 140))
+            val p = Pixel.dpi(context, 10)
+            setPadding(p, p, p + Pixel.dpi(context, 2), p + Pixel.dpi(context, 2))
+            layoutParams = LinearLayout.LayoutParams(-1, -2).apply { bottomMargin = Pixel.dpi(context, 8) }
+            isClickable = true
+            setOnClickListener { unlock(line) }
+        }
+        val sprite = icons.getForPackage(line.pkg, line.user)
+        row.addView(ImageView(this).apply {
+            if (sprite != null) setImageDrawable(android.graphics.drawable.BitmapDrawable(resources, sprite).apply { paint.isFilterBitmap = false })
+            scaleType = ImageView.ScaleType.FIT_CENTER
+        }, LinearLayout.LayoutParams(Pixel.dpi(this, 32), Pixel.dpi(this, 32)).apply { rightMargin = Pixel.dpi(this@LockActivity, 12) })
+        val words = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+        val head = if (line.count > 1) "${appName.uppercase()}  x${line.count}" else appName.uppercase()
+        words.addView(Pixel.label(this, head, 10f, accent))
+        line.title?.let {
+            words.addView(TextView(this).apply {
+                text = it
+                setTextColor(Pixel.INK)
+                textSize = 14f
+                maxLines = 1
+                ellipsize = android.text.TextUtils.TruncateAt.END
+                setPadding(0, Pixel.dpi(context, 4), 0, 0)
+            })
+        }
+        line.text?.let {
+            words.addView(TextView(this).apply {
+                text = it
+                setTextColor(Pixel.MUTED)
+                textSize = 13f
+                maxLines = 2
+                ellipsize = android.text.TextUtils.TruncateAt.END
+            })
+        }
+        row.addView(words, LinearLayout.LayoutParams(0, -2, 1f))
+        if (animate && Pixel.motion(this)) {
+            // Rows step in from the side, one after another.
+            row.translationX = (block * 6).toFloat()
+            row.alpha = 0f
+            row.animate().translationX(0f).alpha(1f).setStartDelay(index * 50L).setDuration(160)
+                .setInterpolator(StepInterpolator(4)).start()
+        }
+        return row
+    }
+
+    /** Hand over to the phone's own unlock. Only after it succeeds do we open anything. */
+    private fun unlock(line: LockLine?) {
+        val then = {
+            line?.intent?.let {
+                try {
+                    it.send()
+                } catch (e: Exception) {
+                    Pixel.say(this, "That notification can't be opened any more.")
+                }
+            }
+            finish()
+            overridePendingTransitionCompat()
+        }
+        val keyguard = getSystemService(KeyguardManager::class.java)
+        if (!keyguard.isKeyguardLocked) {
+            then()
+            return
+        }
+        keyguard.requestDismissKeyguard(this, object : KeyguardManager.KeyguardDismissCallback() {
+            override fun onDismissSucceeded() = then()
+            override fun onDismissCancelled() = resetSwipe()
+            override fun onDismissError() = resetSwipe()
+        })
+    }
+
+    private fun resetSwipe() {
+        content.animate().translationY(0f).setDuration(120).setInterpolator(StepInterpolator(3)).start()
+    }
+
+    private fun overridePendingTransitionCompat() {
+        @Suppress("DEPRECATION")
+        overridePendingTransition(0, 0)
+    }
+
+    companion object {
+        /** When the lock screen last appeared; the app checks this to know if Android blocked it. */
+        @Volatile
+        var shownAt = 0L
+    }
+}
+
+/**
+ * Follows your finger up, a whole block at a time, and unlocks past a quarter of the screen.
+ * Taps still reach the notification rows.
+ */
+private class SwipeUpFrame(context: Context, private val onUnlock: () -> Unit) : FrameLayout(context) {
+    var content: View? = null
+    var snap = 1
+    private val slop = ViewConfiguration.get(context).scaledTouchSlop
+    private var downY = 0f
+    private var dragging = false
+
+    override fun onInterceptTouchEvent(e: MotionEvent): Boolean {
+        when (e.actionMasked) {
+            MotionEvent.ACTION_DOWN -> {
+                downY = e.y
+                dragging = false
+            }
+            MotionEvent.ACTION_MOVE -> if (downY - e.y > slop) {
+                dragging = true
+                return true
+            }
+        }
+        return false
+    }
+
+    override fun onTouchEvent(e: MotionEvent): Boolean {
+        when (e.actionMasked) {
+            MotionEvent.ACTION_DOWN -> downY = e.y
+            MotionEvent.ACTION_MOVE -> {
+                val up = (downY - e.y).coerceAtLeast(0f)
+                content?.translationY = -((up / snap).toInt() * snap).toFloat()
+            }
+            MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
+                val up = downY - e.y
+                if (e.actionMasked == MotionEvent.ACTION_UP && up > height / 4f) {
+                    onUnlock()
+                } else {
+                    content?.animate()?.translationY(0f)?.setDuration(120)?.setInterpolator(StepInterpolator(3))?.start()
+                }
+                dragging = false
+            }
+        }
+        return true
+    }
+}

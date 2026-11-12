@@ -30,6 +30,36 @@ class Prefs(context: Context) {
         get() = sp.getBoolean("drawerKeyboard", false)
         set(v) = sp.edit().putBoolean("drawerKeyboard", v).apply()
 
+    /** Stepped pixel animations. The phone's own "remove animations" turns them off too. */
+    var animations: Boolean
+        get() = sp.getBoolean("animations", true)
+        set(v) = sp.edit().putBoolean("animations", v).apply()
+
+    /** The pixel clock above the home grid. */
+    var homeClock: Boolean
+        get() = sp.getBoolean("homeClock", true)
+        set(v) = sp.edit().putBoolean("homeClock", v).apply()
+
+    /** Notification dots on home icons (needs notification access). */
+    var dots: Boolean
+        get() = sp.getBoolean("dots", true)
+        set(v) = sp.edit().putBoolean("dots", v).apply()
+
+    /** The pixel lock screen, shown in front of the system one. Off until the user turns it on. */
+    var lockScreen: Boolean
+        get() = sp.getBoolean("lockScreen", false)
+        set(v) = sp.edit().putBoolean("lockScreen", v).apply()
+
+    /** What notifications show on the lock screen: 0 app names only, 1 titles, 2 full text. */
+    var lockDetail: Int
+        get() = sp.getInt("lockDetail", 0)
+        set(v) = sp.edit().putInt("lockDetail", v.coerceIn(0, 2)).apply()
+
+    /** Set when the phone stopped the lock screen from opening, so Settings can say so. */
+    var lockBlocked: Boolean
+        get() = sp.getBoolean("lockBlocked", false)
+        set(v) = sp.edit().putBoolean("lockBlocked", v).apply()
+
     /** App ids hidden from the drawer. */
     var hidden: Set<String>
         get() = sp.getStringSet("hidden", emptySet())!!.toSet()
@@ -52,6 +82,11 @@ class Prefs(context: Context) {
         .put("labels", labels)
         .put("accent", accent)
         .put("drawerKeyboard", drawerKeyboard)
+        .put("animations", animations)
+        .put("homeClock", homeClock)
+        .put("dots", dots)
+        .put("lockScreen", lockScreen)
+        .put("lockDetail", lockDetail)
         .put("hidden", JSONArray(hidden.toList()))
 
     fun restore(o: JSONObject) {
@@ -59,6 +94,11 @@ class Prefs(context: Context) {
         labels = o.optBoolean("labels", labels)
         accent = o.optInt("accent", accent)
         drawerKeyboard = o.optBoolean("drawerKeyboard", drawerKeyboard)
+        animations = o.optBoolean("animations", animations)
+        homeClock = o.optBoolean("homeClock", homeClock)
+        dots = o.optBoolean("dots", dots)
+        lockScreen = o.optBoolean("lockScreen", lockScreen)
+        lockDetail = o.optInt("lockDetail", lockDetail)
         o.optJSONArray("hidden")?.let { a -> hidden = (0 until a.length()).map { a.getString(it) }.toSet() }
         touch()
     }

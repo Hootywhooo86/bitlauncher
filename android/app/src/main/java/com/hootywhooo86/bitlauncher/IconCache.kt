@@ -27,6 +27,14 @@ class IconCache(context: Context) {
         return BitmapFactory.decodeFile(file.path)?.also { memory[id] = it }
     }
 
+    /** Any sprite we have for an app's package (for places that only know the package, like notifications). */
+    fun getForPackage(pkg: String, user: Long): Bitmap? {
+        val id = stamps.all.keys.firstOrNull { it.startsWith("$pkg/") && it.endsWith("/$user") } ?: return null
+        val parts = id.split('/')
+        if (parts.size < 3) return null
+        return get(AppKey(parts[0], parts.subList(1, parts.size - 1).joinToString("/"), user))
+    }
+
     /** Make sure the sprite for [key] matches [stamp] (the package's last update). Call off the UI thread. */
     fun ensure(key: AppKey, stamp: Long, icon: () -> Drawable?): Boolean {
         val id = key.id()

@@ -39,6 +39,10 @@ class LauncherActivity : Activity() {
     private lateinit var folderView: FolderView
     private lateinit var emptyHint: TextView
     private lateinit var menu: PixelMenu
+    private lateinit var header: android.widget.LinearLayout
+    private lateinit var clock: PixelClockView
+    private lateinit var dateLabel: TextView
+    private val onNotifications = { refreshDots() }
 
     private lateinit var widgetHost: PixelWidgetHost
     private lateinit var widgetManager: AppWidgetManager
@@ -86,6 +90,9 @@ class LauncherActivity : Activity() {
         } catch (e: Exception) {
             // Can fail while the phone is still unlocking; widgets catch up on the next start.
         }
+        NotificationHub.listen(onNotifications)
+        refreshDots()
+        updateDate()
     }
 
     override fun onStop() {
@@ -94,6 +101,7 @@ class LauncherActivity : Activity() {
             widgetHost.stopListening()
         } catch (e: Exception) {
         }
+        NotificationHub.unlisten(onNotifications)
     }
 
     override fun onResume() {
@@ -169,6 +177,29 @@ class LauncherActivity : Activity() {
         }
         root.addView(workspace, FrameLayout.LayoutParams(-1, -1))
 
+        // The pixel clock and date above the grid. Tap for the phone's alarms.
+        header = android.widget.LinearLayout(this).apply {
+            orientation = android.widget.LinearLayout.VERTICAL
+            gravity = Gravity.CENTER_HORIZONTAL
+        }
+        clock = PixelClockView(this, blink = false)
+        clock.onTick = { if (::dateLabel.isInitialized) updateDate() }
+        clock.setOnClickListener {
+            try {
+                startActivity(Intent(android.provider.AlarmClock.ACTION_SHOW_ALARMS))
+            } catch (e: Exception) {
+                Pixel.say(this, "No clock app found to show alarms.")
+            }
+        }
+        header.addView(clock, android.widget.LinearLayout.LayoutParams(0, -2))
+        dateLabel = Pixel.label(this, "", 10f, Pixel.INK).apply {
+            gravity = Gravity.CENTER
+            setShadowLayer(0.01f, Pixel.dp(context, 1f), Pixel.dp(context, 1f), Pixel.SHADOW)
+            setPadding(0, Pixel.dpi(context, 6), 0, 0)
+        }
+        header.addView(dateLabel, android.widget.LinearLayout.LayoutParams(-1, -2))
+        root.addView(header, FrameLayout.LayoutParams(-1, -2, Gravity.TOP))
+
         emptyHint = Pixel.label(this, "SWIPE UP FOR ALL APPS\n\nHOLD AN APP TO PLACE IT HERE", 11f, Pixel.INK).apply {
             gravity = Gravity.CENTER
             setShadowLayer(0.01f, Pixel.dp(context, 1f), Pixel.dp(context, 1f), Pixel.SHADOW)
@@ -227,7 +258,18 @@ class LauncherActivity : Activity() {
         }
         (dots.layoutParams as FrameLayout.LayoutParams).bottomMargin = insetBottom + gap + dockHeight
         (removeBar.layoutParams as FrameLayout.LayoutParams).topMargin = insetTop
-        workspace.setPadding(gap, insetTop + gap, gap, insetBottom + gap * 2 + dockHeight + Pixel.dpi(this, 20))
+
+        // Clock: 55% of the width, so each block is a whole number of pixels.
+        val clockWidth = (resources.displayMetrics.widthPixels * 0.55f).toInt()
+        val block = clockWidth / (PixelGlyphs.CLOCK_W + 1)
+        (clock.layoutParams as android.widget.LinearLayout.LayoutParams).width = block * (PixelGlyphs.CLOCK_W + 1)
+        (header.layoutParams as FrameLayout.LayoutParams).topMargin = insetTop + gap * 2
+        header.visibility = if (prefs.homeClock) View.VISIBLE else View.GONE
+        clock.accent = prefs.accent
+        val headerHeight = if (prefs.homeClock) block * (PixelGlyphs.H + 1) + Pixel.dpi(this, 30) + gap * 2 else 0
+
+        workspace.setPadding(gap, insetTop + gap + headerHeight, gap, insetBottom + gap * 2 + dockHeight + Pixel.dpi(this, 20))
+        header.requestLayout()
         drawer.setPadding(0, insetTop, 0, 0)
         drawer.setBottomInset(insetBottom)
         folderView.setPadding(0, insetTop, 0, insetBottom)
@@ -238,6 +280,7 @@ class LauncherActivity : Activity() {
 
     private fun applyPrefs() {
         appliedPrefs = prefs.version
+        refreshDots()
         menu = PixelMenu(this, prefs.accent)
         if (layout.grid != prefs.grid) {
             layout.resize(prefs.grid)
@@ -295,6 +338,42 @@ class LauncherActivity : Activity() {
         drawer.setApps(visibleApps())
         folderView.setAccent(accent)
         emptyHint.visibility = if (layout.pages.all { it.isEmpty() }) View.VISIBLE else View.GONE
+        refreshDots()
+    }
+
+    private fun updateDate() {
+        dateLabel.text = java.text.SimpleDateFormat("EEE d MMM", java.util.Locale.getDefault()).format(java.util.Date()).uppercase()
+    }
+
+    /** Dots on every icon (and folder) whose app has something new. Only redraws what changed. */
+    private fun refreshDots() {
+        val with = if (prefs.dots) NotificationHub.appsWithDots() else emptySet()
+        fun dotFor(tag: Any?): Boolean = when (tag) {
+            is AppKey -> "${tag.pkg}/${tag.user}" in with
+            is FolderItem -> tag.apps.any { "${it.pkg}/${it.user}" in with }
+            else -> false
+        }
+        for (i in 0 until workspace.pageCount) {
+            val page = workspace.page(i) ?: continue
+            for (j in 0 until page.childCount) (page.getChildAt(j) as? AppIconView)?.let { it.hasDot = dotFor(it.tagItem) }
+        }
+        for (j in 0 until dock.childCount) (dock.getChildAt(j) as? AppIconView)?.let { it.hasDot = dotFor(it.tagItem) }
+    }
+
+    /** A landed icon hops one block up and back: pixel feedback that the drop worked. */
+    private fun hop(view: View) {
+        if (!Pixel.motion(this)) return
+        val up = -Pixel.dp(this, 6f)
+        view.animate().translationY(up).setDuration(70).setInterpolator(StepInterpolator(2)).withEndAction {
+            view.animate().translationY(0f).setDuration(70).setInterpolator(StepInterpolator(2)).start()
+        }.start()
+    }
+
+    private fun hopLanded(tag: Any) {
+        val views = mutableListOf<View>()
+        for (i in 0 until workspace.pageCount) workspace.page(i)?.let { p -> for (j in 0 until p.childCount) views.add(p.getChildAt(j)) }
+        for (j in 0 until dock.childCount) views.add(dock.getChildAt(j))
+        views.firstOrNull { (it as? AppIconView)?.tagItem.let { t -> t === tag || (tag is AppKey && t == tag) } }?.let { hop(it) }
     }
 
     private fun visibleApps(): List<AppEntry> {
@@ -361,6 +440,7 @@ class LauncherActivity : Activity() {
         view.tagItem = key
         view.sprite = icons.get(key)
         view.folderSprites = null
+        view.hasDot = false
         view.label = apps.label(key)
         view.showLabel = prefs.labels && source != Source.DOCK
         view.iconSizeDp = prefs.iconDp()
@@ -425,10 +505,17 @@ class LauncherActivity : Activity() {
         drawer.setApps(visibleApps())
         drawer.cellHeight = Pixel.dpi(this, prefs.iconDp() + 40)
         drawer.reset()
-        drawer.translationY = root.height * 0.15f
-        drawer.alpha = 0f
         drawer.visibility = View.VISIBLE
-        drawer.animate().translationY(0f).alpha(1f).setDuration(140).withEndAction {
+        if (!Pixel.motion(this)) {
+            drawer.translationY = 0f
+            drawer.alpha = 1f
+            if (prefs.drawerKeyboard) drawer.showKeyboard()
+            return
+        }
+        // Slides up in four chunky steps.
+        drawer.translationY = root.height * 0.2f
+        drawer.alpha = 0f
+        drawer.animate().translationY(0f).alpha(1f).setDuration(160).setInterpolator(StepInterpolator(4)).withEndAction {
             if (prefs.drawerKeyboard) drawer.showKeyboard()
         }.start()
     }
@@ -436,7 +523,12 @@ class LauncherActivity : Activity() {
     private fun closeDrawer() {
         if (drawer.visibility != View.VISIBLE) return
         drawer.hideKeyboard()
-        drawer.animate().translationY(root.height * 0.15f).alpha(0f).setDuration(120).withEndAction {
+        if (!Pixel.motion(this)) {
+            drawer.visibility = View.GONE
+            drawer.reset()
+            return
+        }
+        drawer.animate().translationY(root.height * 0.2f).alpha(0f).setDuration(120).setInterpolator(StepInterpolator(3)).withEndAction {
             drawer.visibility = View.GONE
             drawer.reset()
         }.start()
@@ -450,6 +542,13 @@ class LauncherActivity : Activity() {
             AppIconView(this).also { bindIcon(it, key, Source.FOLDER, folder = folder) }
         }, cell)
         folderView.visibility = View.VISIBLE
+        if (Pixel.motion(this)) folderView.popIn()
+        refreshFolderDots(folder)
+    }
+
+    private fun refreshFolderDots(folder: FolderItem) {
+        val with = if (prefs.dots) NotificationHub.appsWithDots() else emptySet()
+        folderView.icons().forEach { v -> (v.tagItem as? AppKey)?.let { v.hasDot = "${it.pkg}/${it.user}" in with } }
     }
 
     private fun closeFolder() {
@@ -584,6 +683,7 @@ class LauncherActivity : Activity() {
     // ---------------------------------------------------------------- drag and drop
 
     private var dragTarget: DropTarget = DropTarget.None
+    private var landed: Any? = null
     private val pageFlip = Runnable { flipPageDuringDrag() }
     private var flipDirection = 0
 
@@ -637,7 +737,9 @@ class LauncherActivity : Activity() {
                 }
             }
             DragEvent.ACTION_DROP -> {
+                landed = null
                 val ok = drop(info, targetAt(e.x, e.y, info))
+                if (ok && landed == null) landed = (info.item as? FolderItem) ?: info.singleApp()
                 return ok
             }
             DragEvent.ACTION_DRAG_ENDED -> {
@@ -650,6 +752,8 @@ class LauncherActivity : Activity() {
                 layout.trimEmptyPages()
                 save()
                 rebuild()
+                landed?.let { tag -> root.post { hopLanded(tag) } }
+                landed = null
             }
         }
         return true
@@ -783,12 +887,15 @@ class LauncherActivity : Activity() {
                         removeFromSource(info)
                         val page = layout.pages[target.page]
                         page.remove(occupant)
-                        page.add(FolderItem("Folder", mutableListOf(occupant.app, app), occupant.x, occupant.y))
+                        val made = FolderItem("Folder", mutableListOf(occupant.app, app), occupant.x, occupant.y)
+                        page.add(made)
+                        landed = made
                     }
                     occupant is FolderItem && app != null -> {
                         if (occupant === info.folder || occupant.apps.contains(app)) return false
                         removeFromSource(info)
                         occupant.apps.add(app)
+                        landed = occupant
                     }
                     else -> {
                         Pixel.say(this, "No room there.")

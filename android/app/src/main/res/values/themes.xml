@@ -16,4 +16,8 @@
         <item name="android:windowAnimationStyle">@null</item>
         <item name="android:colorBackgroundCacheHint">@null</item>
     </style>
+
+    <style name="Theme.Bit.Lock" parent="Theme.Bit.Home">
+        <item name="android:windowAnimationStyle">@null</item>
+    </style>
 </resources>

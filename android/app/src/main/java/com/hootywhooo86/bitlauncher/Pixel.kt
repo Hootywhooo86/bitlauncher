@@ -9,7 +9,9 @@ import android.graphics.PixelFormat
 import android.graphics.Typeface
 import android.graphics.drawable.Drawable
 import android.view.Gravity
+import android.animation.ValueAnimator
 import android.view.View
+import android.view.animation.Interpolator
 import android.widget.TextView
 import android.widget.Toast
 
@@ -62,6 +64,12 @@ object Pixel {
             setOnClickListener(onClick)
         }
 
+    /**
+     * Whether to animate: the user's own switch, and the phone's "remove animations"
+     * (developer options and accessibility) both get a say.
+     */
+    fun motion(context: Context): Boolean = Prefs(context).animations && ValueAnimator.areAnimatorsEnabled()
+
     /** One honest sentence, never a silent no-op. */
     fun say(context: Context, sentence: String) {
         Toast.makeText(context, sentence, Toast.LENGTH_SHORT).show()
@@ -111,3 +119,12 @@ class PanelDrawable(context: Context, var fill: Int, var border: Int, private va
 }
 
 fun withAlpha(color: Int, alpha: Int): Int = Color.argb(alpha, Color.red(color), Color.green(color), Color.blue(color))
+
+/**
+ * Pixel motion: progress jumps in [steps] equal steps instead of gliding, like a sprite moving
+ * a block at a time. Short animations with 3–4 steps read as "retro" without feeling slow.
+ */
+class StepInterpolator(private val steps: Int) : Interpolator {
+    override fun getInterpolation(t: Float): Float =
+        if (t >= 1f) 1f else kotlin.math.floor(t * steps) / steps
+}

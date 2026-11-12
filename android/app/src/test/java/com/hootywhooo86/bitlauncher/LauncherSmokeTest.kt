@@ -72,6 +72,42 @@ class LauncherSmokeTest {
     }
 
     @Test
+    fun lockScreenOpensWithClockAndUnlockHint() {
+        val activity = Robolectric.buildActivity(LockActivity::class.java).setup().get()
+        idle()
+        val root = activity.window.decorView
+        assertTrue(hasVisibleText(root, "SWIPE UP TO UNLOCK"))
+        assertTrue(findClock(root) != null)
+        assertTrue(LockActivity.shownAt > 0)
+    }
+
+    @Test
+    fun homeClockCanBeTurnedOff() {
+        val controller = Robolectric.buildActivity(LauncherActivity::class.java).setup()
+        idle()
+        assertEquals(View.VISIBLE, (findClock(controller.get().window.decorView)!!.parent as View).visibility)
+        Prefs(controller.get()).apply { homeClock = false; touch() }
+        controller.pause().resume()
+        idle()
+        assertEquals(View.GONE, (findClock(controller.get().window.decorView)!!.parent as View).visibility)
+    }
+
+    @Test
+    fun settingsOffersLockScreenAndNotificationAccess() {
+        val activity = Robolectric.buildActivity(SettingsActivity::class.java).setup().get()
+        val root = activity.window.decorView
+        assertTrue(hasVisibleText(root, "LOCK SCREEN"))
+        assertTrue(hasVisibleText(root, "ALLOW NOTIFICATION ACCESS"))
+        assertTrue(hasVisibleText(root, "ANIMATIONS"))
+    }
+
+    private fun findClock(v: View): PixelClockView? {
+        if (v is PixelClockView) return v
+        if (v is android.view.ViewGroup) for (i in 0 until v.childCount) findClock(v.getChildAt(i))?.let { return it }
+        return null
+    }
+
+    @Test
     fun spriteIsCrispAndOutlined() {
         // A solid red 90x90 square becomes a 30x30 red block with a dark 1px border.
         val big = 90

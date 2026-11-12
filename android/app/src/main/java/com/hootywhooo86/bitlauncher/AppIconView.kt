@@ -28,6 +28,10 @@ class AppIconView(context: Context) : View(context) {
     var iconSizeDp = 50
     var accent = Pixel.ACCENTS[0]
 
+    /** A notification dot: something new in this app (or in this folder). */
+    var hasDot = false
+        set(v) { if (field != v) { field = v; invalidate() } }
+
     /** Called when, after a long press, the finger moves: time to start dragging. */
     var onDragOut: ((AppIconView) -> Unit)? = null
 
@@ -39,6 +43,7 @@ class AppIconView(context: Context) : View(context) {
     }
     private val shadowPaint = Paint(textPaint).apply { color = Pixel.SHADOW }
     private val placeholderPaint = Paint().apply { color = withAlpha(Pixel.MUTED, 90) }
+    private val dotPaint = Paint()
     private val folder = PanelDrawable(context, withAlpha(Pixel.PANEL, 230), Pixel.MUTED, shadow = false)
     private val dst = RectF()
     private val src = Rect()
@@ -74,8 +79,15 @@ class AppIconView(context: Context) : View(context) {
         return Rect(left, top, left + size, top + size)
     }
 
+    override fun drawableStateChanged() {
+        super.drawableStateChanged()
+        invalidate() // pressed state moves the icon
+    }
+
     override fun onDraw(canvas: Canvas) {
         val r = iconRect()
+        // Pressed: the icon sinks by one sprite pixel, like a console button.
+        if (isPressed) r.offset(0, r.width() / IconCache.SIZE)
         dst.set(r)
         val folderApps = folderSprites
         if (folderApps != null) {
@@ -101,6 +113,17 @@ class AppIconView(context: Context) : View(context) {
                 val inset = r.width() / 8f
                 canvas.drawRect(dst.left + inset, dst.top + inset, dst.right - inset, dst.bottom - inset, placeholderPaint)
             }
+        }
+        if (hasDot) {
+            // A 3x3 sprite-pixel square on the top-right corner, outlined so it reads on any icon.
+            val p = r.width() / IconCache.SIZE.toFloat()
+            val size = p * 5
+            val right = r.right.toFloat()
+            val top = r.top.toFloat()
+            dotPaint.color = Pixel.SHADOW
+            canvas.drawRect(right - size, top, right, top + size, dotPaint)
+            dotPaint.color = accent
+            canvas.drawRect(right - size + p, top + p, right - p, top + size - p, dotPaint)
         }
         if (showLabel && label.isNotEmpty()) {
             val text = fit(label, width - 4 * px)

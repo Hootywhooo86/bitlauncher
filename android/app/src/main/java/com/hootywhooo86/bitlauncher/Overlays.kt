@@ -221,6 +221,22 @@ class FolderView(context: Context) : FrameLayout(context) {
         }
     }
 
+    /** The panel pops open in three steps, from a little smaller to full size. */
+    fun popIn() {
+        panel.scaleX = 0.7f
+        panel.scaleY = 0.7f
+        panel.animate().scaleX(1f).scaleY(1f).setDuration(120).setInterpolator(StepInterpolator(3)).start()
+    }
+
+    fun icons(): List<AppIconView> {
+        val out = mutableListOf<AppIconView>()
+        for (r in 0 until grid.childCount) {
+            val row = grid.getChildAt(r) as? ViewGroup ?: continue
+            for (i in 0 until row.childCount) (row.getChildAt(i) as? AppIconView)?.let(out::add)
+        }
+        return out
+    }
+
     fun hideKeyboard() {
         title.clearFocus()
         context.getSystemService(InputMethodManager::class.java).hideSoftInputFromWindow(windowToken, 0)
@@ -274,6 +290,12 @@ class PixelMenu(private val context: Context, private val accent: Int) {
         if (y < Pixel.dpi(context, 32)) y = loc[1] + r.bottom
         window.showAtLocation(anchor, Gravity.NO_GRAVITY, x, y)
         popup = window
+        if (Pixel.motion(context)) {
+            // Two quick steps from 85% to full: a pixel "pop".
+            list.scaleX = 0.85f
+            list.scaleY = 0.85f
+            list.animate().scaleX(1f).scaleY(1f).setDuration(80).setInterpolator(StepInterpolator(2)).start()
+        }
     }
 
     fun dismiss() {

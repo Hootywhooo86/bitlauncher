@@ -294,10 +294,25 @@ class PageDots(context: Context) : View(context) {
     var count = 1
         set(v) { field = v; invalidate() }
     var current = 0
-        set(v) { field = v; invalidate() }
+        set(v) {
+            if (v != field && Pixel.motion(context)) pop()
+            field = v
+            invalidate()
+        }
     var accent = Pixel.ACCENTS[0]
     private val paint = Paint()
     private val size = Pixel.dp(context, 6f)
+    private var grow = 0f
+
+    /** The new page's dot puffs up a block and settles. */
+    private fun pop() {
+        android.animation.ValueAnimator.ofFloat(1f, 0f).apply {
+            duration = 160
+            interpolator = StepInterpolator(2)
+            addUpdateListener { grow = it.animatedValue as Float; invalidate() }
+            start()
+        }
+    }
 
     override fun onDraw(canvas: Canvas) {
         if (count <= 1) return
@@ -307,7 +322,8 @@ class PageDots(context: Context) : View(context) {
         val y = (height - size) / 2
         for (i in 0 until count) {
             paint.color = if (i == current) accent else withAlpha(Pixel.INK, 110)
-            canvas.drawRect(x, y, x + size, y + size, paint)
+            val g = if (i == current) grow * size / 3f else 0f
+            canvas.drawRect(x - g, y - g, x + size + g, y + size + g, paint)
             x += size + gap
         }
     }
