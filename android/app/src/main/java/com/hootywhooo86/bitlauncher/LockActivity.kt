@@ -102,6 +102,14 @@ class LockActivity : Activity() {
     private lateinit var date: TextView
     private lateinit var info: TextView
     private lateinit var mediaBox: LinearLayout
+    private lateinit var chargeBox: LinearLayout
+    private lateinit var charge: ChargeView
+    private lateinit var chargeText: TextView
+
+    /** Plugged in or not, and how full: the charging animation follows it live. */
+    private val battery = object : BroadcastReceiver() {
+        override fun onReceive(context: Context, intent: Intent) = showCharge(intent)
+    }
     private lateinit var media: MediaSource
     private var listW = 0
     private var leaving = false
@@ -155,6 +163,8 @@ class LockActivity : Activity() {
         clock.update(animate = false)
         renderInfo()
         media.start()
+        // The battery broadcast is sticky: registering hands back the current state at once.
+        registerReceiver(battery, IntentFilter(Intent.ACTION_BATTERY_CHANGED))?.let(::showCharge)
         renderNotes(animate = true)
     }
 
@@ -162,6 +172,8 @@ class LockActivity : Activity() {
         super.onStop()
         NotificationHub.unlisten(onNotes)
         media.stop()
+        unregisterReceiver(battery)
+        charge.charging = false
     }
 
     @Deprecated("Deprecated in Java")
@@ -207,6 +219,15 @@ class LockActivity : Activity() {
             setPadding(0, Pixel.dpi(context, 6), 0, Pixel.dpi(context, 22))
         }
         content.addView(info, LinearLayout.LayoutParams(-1, -2))
+        charge = ChargeView(this).also { it.accent = accent; it.style = prefs.chargeStyle }
+        chargeText = Pixel.label(this, "", 10f, Pixel.INK).apply { gravity = Gravity.CENTER }
+        chargeBox = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            visibility = View.GONE
+            addView(charge, LinearLayout.LayoutParams(-1, -2))
+            addView(chargeText, LinearLayout.LayoutParams(-1, -2).apply { topMargin = Pixel.dpi(context, 8) })
+        }
+        content.addView(chargeBox, LinearLayout.LayoutParams(minOf(listW, Pixel.dpi(this, 360)), -2).apply { bottomMargin = Pixel.dpi(this@LockActivity, 22) })
         mediaBox = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
         content.addView(mediaBox, LinearLayout.LayoutParams(listW, -2))
         list = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
@@ -343,6 +364,27 @@ class LockActivity : Activity() {
         }
         info.text = lines.joinToString("\n")
         info.visibility = if (lines.isEmpty()) View.GONE else View.VISIBLE
+    }
+
+    private fun showCharge(intent: Intent) {
+        val plugged = intent.getIntExtra(android.os.BatteryManager.EXTRA_PLUGGED, 0) != 0
+        val level = intent.getIntExtra(android.os.BatteryManager.EXTRA_LEVEL, -1)
+        val scale = intent.getIntExtra(android.os.BatteryManager.EXTRA_SCALE, 100).coerceAtLeast(1)
+        val style = prefs.chargeStyle
+        if (!plugged || level < 0 || style == "off") {
+            chargeBox.visibility = View.GONE
+            charge.charging = false
+            return
+        }
+        val pct = level * 100 / scale
+        val full = intent.getIntExtra(android.os.BatteryManager.EXTRA_STATUS, 0) == android.os.BatteryManager.BATTERY_STATUS_FULL || pct >= 100
+        charge.style = style
+        charge.level = pct
+        charge.charging = !full
+        val estimate = if (!full && android.os.Build.VERSION.SDK_INT >= 28)
+            fullIn(getSystemService(android.os.BatteryManager::class.java).computeChargeTimeRemaining()) else null
+        chargeText.text = (if (full) "CHARGED  $pct%" else "CHARGING  $pct%") + (estimate?.let { "  ·  ${it.uppercase()}" } ?: "")
+        chargeBox.visibility = View.VISIBLE
     }
 
     private fun renderMedia() {

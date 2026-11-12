@@ -163,6 +163,11 @@ class Prefs(context: Context) {
         get() = sp.getBoolean("layoutLocked", false)
         set(v) = sp.edit().putBoolean("layoutLocked", v).apply()
 
+        /** Charging animation on the lock screen: "off" or one of ChargeView.STYLES. */
+    var chargeStyle: String
+        get() = sp.getString("chargeStyle", "battery")!!
+        set(v) = sp.edit().putString("chargeStyle", v).apply()
+
         /** App ids hidden from the drawer. */
     var hidden: Set<String>
         get() = sp.getStringSet("hidden", emptySet())!!.toSet()
@@ -192,6 +197,7 @@ class Prefs(context: Context) {
         .put("lockDetail", lockDetail)
         .put("hidden", JSONArray(hidden.toList()))
         .put("theme", theme)
+        .put("chargeStyle", chargeStyle)
         .put("layoutLocked", layoutLocked)
         .put("shiftSchedule", shiftSchedule)
         .put("shiftDays", JSONArray(shiftDays.toList()))
@@ -214,6 +220,7 @@ class Prefs(context: Context) {
         lockScreen = o.optBoolean("lockScreen", lockScreen)
         lockDetail = o.optInt("lockDetail", lockDetail)
         theme = o.optString("theme", theme)
+        chargeStyle = o.optString("chargeStyle", chargeStyle)
         layoutLocked = o.optBoolean("layoutLocked", layoutLocked)
         shiftSchedule = o.optBoolean("shiftSchedule", shiftSchedule)
         o.optJSONArray("shiftDays")?.let { a -> shiftDays = (0 until a.length()).map { a.getInt(it) }.toSet() }

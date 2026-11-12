@@ -335,6 +335,11 @@ class SettingsActivity : Activity() {
             } else {
                 body.addView(note("Apps that mark a notification secret never show here, and private ones only show what the app allows."))
             }
+            body.addView(Pixel.label(this, "CHARGING ANIMATION", 9f, Pixel.MUTED).apply { setPadding(0, Pixel.dpi(context, 12), 0, Pixel.dpi(context, 6)) })
+            body.addView(choice("OFF", prefs.chargeStyle == "off") { changed { prefs.chargeStyle = "off" } }.full())
+            for ((key, name) in ChargeView.STYLES) {
+                body.addView(choice(name.uppercase(), prefs.chargeStyle == key) { changed { prefs.chargeStyle = key } }.full())
+            }
             body.addView(Pixel.button(this, "PREVIEW", accent) {
                 startActivity(Intent(this, LockActivity::class.java))
             }.full())

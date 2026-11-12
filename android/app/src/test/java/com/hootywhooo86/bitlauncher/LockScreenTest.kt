@@ -5,6 +5,7 @@ import android.graphics.Canvas
 import android.os.Looper
 import android.view.View
 import android.view.ViewGroup
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -22,7 +23,7 @@ import java.io.File
 @GraphicsMode(GraphicsMode.Mode.NATIVE)
 class LockScreenTest {
     private fun hasText(v: View, text: String): Boolean {
-        if (v is android.widget.TextView && v.visibility == View.VISIBLE && v.text.toString().contains(text)) return true
+        if (v is android.widget.TextView && v.isShown && v.text.toString().contains(text)) return true
         if (v is ViewGroup) for (i in 0 until v.childCount) if (hasText(v.getChildAt(i), text)) return true
         return false
     }
@@ -65,5 +66,32 @@ class LockScreenTest {
     fun eventNamesStayPrivateByDefault() {
         // App-names privacy (the default) never shows what the next event is called.
         assertFalse(Prefs(RuntimeEnvironment.getApplication()).lockDetail > 0)
+    }
+
+    @Test
+    fun chargingShowsTheAnimationAndUnpluggingHidesIt() {
+        val ctx = RuntimeEnvironment.getApplication()
+        Prefs(ctx).chargeStyle = "train"
+        fun battery(plugged: Boolean) = android.content.Intent(android.content.Intent.ACTION_BATTERY_CHANGED)
+            .putExtra(android.os.BatteryManager.EXTRA_PLUGGED, if (plugged) android.os.BatteryManager.BATTERY_PLUGGED_USB else 0)
+            .putExtra(android.os.BatteryManager.EXTRA_LEVEL, 64)
+            .putExtra(android.os.BatteryManager.EXTRA_SCALE, 100)
+        @Suppress("DEPRECATION")
+        ctx.sendStickyBroadcast(battery(true))
+        val lock = Robolectric.buildActivity(LockActivity::class.java).setup().get()
+        shadowOf(Looper.getMainLooper()).idle()
+        assertTrue(hasText(lock.window.decorView, "CHARGING  64%"))
+        @Suppress("DEPRECATION")
+        ctx.sendStickyBroadcast(battery(false))
+        shadowOf(Looper.getMainLooper()).idle()
+        assertFalse(hasText(lock.window.decorView, "CHARGING"))
+        Prefs(ctx).chargeStyle = "battery"
+    }
+
+    @Test
+    fun fullInReadsNaturally() {
+        assertEquals("Full in 1h 12m", fullIn(72 * 60_000L))
+        assertEquals("Full in 5m", fullIn(5 * 60_000L))
+        assertEquals(null, fullIn(-1))
     }
 }
