@@ -8,7 +8,9 @@ import android.content.Intent
 import android.content.pm.ApplicationInfo
 import android.content.pm.LauncherApps
 import android.content.pm.PackageManager
+import android.graphics.Bitmap
 import android.graphics.BitmapFactory
+import android.graphics.Canvas
 import android.graphics.Rect
 import android.net.Uri
 import android.os.Build
@@ -200,6 +202,14 @@ class LauncherActivity : Activity() {
             settleToday(0f, 0f)
             closed = true
         }
+        if (::pageOverview.isInitialized && pageOverview.visibility == View.VISIBLE) {
+            closePages()
+            closed = true
+        }
+        if (resizing != null) {
+            endResize()
+            closed = true
+        }
         return closed
     }
 
@@ -237,6 +247,7 @@ class LauncherActivity : Activity() {
             override fun onTodayDrag(px: Float) = dragToday(px)
             override fun onTodayRelease(px: Float, velocityX: Float) = releaseToday(px, velocityX)
             override fun onDoubleTap() = doubleTap()
+            override fun onPinchIn() = openPages()
             override fun iconSwipeAt(x: Float, y: Float) = swipeActionAt(x, y)
         }
         root.addView(workspace, FrameLayout.LayoutParams(-1, -1))
@@ -709,6 +720,120 @@ class LauncherActivity : Activity() {
         } catch (e: Exception) {
             Pixel.say(this, "${apps.label(key)} can't be opened. It may have been uninstalled or disabled.")
         }
+    }
+
+    // ---------------------------------------------------------------- page overview
+
+    private lateinit var pageOverview: PageOverview
+
+    private fun openPages() {
+        menu.dismiss()
+        if (!::pageOverview.isInitialized) {
+            pageOverview = PageOverview(this)
+            root.addView(pageOverview, FrameLayout.LayoutParams(-1, -1))
+            pageOverview.onClose = { closePages() }
+            pageOverview.onGoTo = { i ->
+                closePages()
+                workspace.snapTo(i)
+            }
+            pageOverview.onMove = { from, to ->
+                layout.movePage(from, to)
+                saveAndRebuild()
+                showPages()
+            }
+            pageOverview.onDelete = { i ->
+                if (layout.pages.getOrNull(i).isNullOrEmpty()) {
+                    layout.removePage(i)
+                    saveAndRebuild()
+                } else {
+                    removing("Page ${i + 1} deleted") {
+                        layout.removePage(i).filterIsInstance<WidgetItem>().forEach { deleteWidgetLater(it.widgetId) }
+                    }
+                }
+                showPages()
+            }
+            pageOverview.onAdd = {
+                layout.pages.add(mutableListOf())
+                saveAndRebuild()
+                showPages()
+            }
+        }
+        pageOverview.setInsets(insetTop, insetBottom)
+        showPages()
+        pageOverview.visibility = View.VISIBLE
+        pageOverview.bringToFront()
+        if (::undoBar.isInitialized) undoBar.bringToFront()
+        if (Pixel.motion(this)) {
+            pageOverview.alpha = 0f
+            pageOverview.scaleX = 1.08f
+            pageOverview.scaleY = 1.08f
+            pageOverview.animate().alpha(1f).scaleX(1f).scaleY(1f).setDuration(220).setInterpolator(Ease.enter).start()
+        }
+    }
+
+    /** A picture of each page, small enough to keep memory low. */
+    private fun showPages() {
+        val cols = if (workspace.panes > 1) 4 else 3
+        val cellW = (root.width - Pixel.dpi(this, 24)) / cols
+        val first = workspace.page(0)
+        val ratio = if (first != null && first.width > 0) first.height / first.width.toFloat() else 1.6f
+        val pictures = layout.pages.indices.map { i ->
+            val page = workspace.page(i) ?: return@map null
+            if (page.width == 0 || page.height == 0) return@map null
+            val scale = (cellW / page.width.toFloat()).coerceAtMost(1f)
+            Bitmap.createBitmap((page.width * scale).toInt().coerceAtLeast(1), (page.height * scale).toInt().coerceAtLeast(1), Bitmap.Config.ARGB_8888).also { bmp ->
+                val c = Canvas(bmp)
+                c.scale(scale, scale)
+                page.draw(c)
+            }
+        }
+        pageOverview.show(pictures, prefs.accent, cols, ratio, cellW)
+    }
+
+    private fun closePages() {
+        if (Pixel.motion(this)) pageOverview.animate().alpha(0f).setDuration(150).withEndAction { pageOverview.visibility = View.GONE }.start()
+        else pageOverview.visibility = View.GONE
+    }
+
+    // ---------------------------------------------------------------- resizing widgets
+
+    private var resizing: ResizeFrame? = null
+
+    private fun startResize(item: WidgetItem) {
+        menu.dismiss()
+        val pageIndex = layout.pages.indexOfFirst { it.contains(item) }
+        val page = workspace.page(pageIndex) ?: return
+        val loc = IntArray(2)
+        page.getLocationInWindow(loc)
+        val rootLoc = IntArray(2)
+        root.getLocationInWindow(rootLoc)
+        val (minW, minH) = minCells(widgetManager.getAppWidgetInfo(item.widgetId))
+        val frame = ResizeFrame(this).apply {
+            cellLeft = (loc[0] - rootLoc[0] + page.paddingLeft).toFloat()
+            cellTop = (loc[1] - rootLoc[1] + page.paddingTop).toFloat()
+            cellW = page.cellWidth()
+            cellH = page.cellHeight()
+            cols = layout.cols()
+            rows = layout.rows()
+            this.minW = minW.coerceAtMost(cols)
+            this.minH = minH.coerceAtMost(rows)
+            accent = prefs.accent
+            x = item.x; y = item.y; w = item.w; h = item.h
+            canFit = { x, y, w, h -> layout.isFree(pageIndex, x, y, w, h, item) }
+            onResize = { x, y, w, h ->
+                item.x = x; item.y = y; item.w = w; item.h = h
+                saveAndRebuild()
+                bringToFront()
+            }
+            onDone = { endResize() }
+        }
+        root.addView(frame, FrameLayout.LayoutParams(-1, -1))
+        resizing = frame
+    }
+
+    private fun endResize() {
+        resizing?.let { root.removeView(it) }
+        resizing = null
     }
 
     // ---------------------------------------------------------------- undo
@@ -1417,6 +1542,7 @@ class LauncherActivity : Activity() {
         val labelsHere = page !in layout.unlabelledPages
         menu.show(workspace, listOf(
             PixelMenu.Entry("Widgets") { showWidgetPicker() },
+            PixelMenu.Entry("Pages") { openPages() },
             PixelMenu.Entry(if (mode == Shift.WORK) "Switch to Home layout" else "Switch to Work layout") {
                 val next = if (mode == Shift.WORK) Shift.HOME else Shift.WORK
                 Shift.hold(prefs, next)
@@ -1846,43 +1972,13 @@ class LauncherActivity : Activity() {
     private fun showWidgetMenu(view: PixelWidgetView) {
         val item = view.tagItem ?: return
         menu.show(view, listOf(
-            PixelMenu.Entry("Resize  ${item.w}x${item.h}") { showResizeMenu(view, item) },
+            PixelMenu.Entry("Resize") { startResize(item) },
             PixelMenu.Entry("Remove") {
                 removing("Widget removed") {
                     layout.remove(item)
                     deleteWidgetLater(item.widgetId)
                 }
             },
-        ))
-    }
-
-    /** One step at a time; the menu reopens so you can keep tapping. */
-    private fun showResizeMenu(view: PixelWidgetView, item: WidgetItem) {
-        val info = widgetManager.getAppWidgetInfo(item.widgetId)
-        val page = layout.pages.indexOfFirst { it.contains(item) }
-        if (page < 0) return
-        val (minW, minH) = minCells(info)
-        fun step(dw: Int, dh: Int) {
-            val w = item.w + dw
-            val h = item.h + dh
-            when {
-                w < minW || h < minH -> Pixel.say(this, "This widget can't get any smaller.")
-                !layout.isFree(page, item.x, item.y, w, h, item) -> Pixel.say(this, "Not enough room. Move things out of the way first.")
-                else -> {
-                    item.w = w
-                    item.h = h
-                    save()
-                    rebuild()
-                }
-            }
-            root.post { widgetViews[item.widgetId]?.let { showResizeMenu(it, item) } }
-        }
-        menu.show(view, listOf(
-            PixelMenu.Entry("Wider") { step(1, 0) },
-            PixelMenu.Entry("Narrower") { step(-1, 0) },
-            PixelMenu.Entry("Taller") { step(0, 1) },
-            PixelMenu.Entry("Shorter") { step(0, -1) },
-            PixelMenu.Entry("Done  ${item.w}x${item.h}") {},
         ))
     }
 

@@ -156,7 +156,30 @@ class HomeLayout(var grid: GridSize, val pages: MutableList<MutableList<Item>>, 
         pages.forEach { it.remove(item) }
     }
 
-    /** Drop trailing empty pages, but always keep one. */
+    /** Move a whole page; "labels off" stays with the page it belongs to. */
+    fun movePage(from: Int, to: Int) {
+        if (from !in pages.indices) return
+        val target = to.coerceIn(0, pages.size - 1)
+        if (target == from) return
+        val unlabelled = pages.indices.map { it in unlabelledPages }.toMutableList()
+        pages.add(target, pages.removeAt(from))
+        unlabelled.add(target, unlabelled.removeAt(from))
+        unlabelledPages.clear()
+        unlabelled.forEachIndexed { i, off -> if (off) unlabelledPages.add(i) }
+    }
+
+    /** Delete a page and everything on it (always leaving one page). Returns what was on it. */
+    fun removePage(index: Int): List<Item> {
+        if (index !in pages.indices) return emptyList()
+        val gone = pages.removeAt(index)
+        val shifted = unlabelledPages.filter { it != index }.map { if (it > index) it - 1 else it }
+        unlabelledPages.clear()
+        unlabelledPages.addAll(shifted)
+        if (pages.isEmpty()) pages.add(mutableListOf())
+        return gone
+    }
+
+        /** Drop trailing empty pages, but always keep one. */
     fun trimEmptyPages() {
         while (pages.size > 1 && pages.last().isEmpty()) pages.removeAt(pages.size - 1)
         unlabelledPages.removeAll { it >= pages.size }

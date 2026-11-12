@@ -116,6 +116,9 @@ class Workspace(context: Context) : ViewGroup(context) {
         /** Double tap on empty space. */
         fun onDoubleTap()
 
+        /** Two fingers pinching inward: show all pages. */
+        fun onPinchIn()
+
         /** If the icon at (x, y) has a swipe-up action, return it: the swipe runs it instead of opening the drawer. */
         fun iconSwipeAt(x: Float, y: Float): (() -> Unit)?
         fun onPageChanged(page: Int)
@@ -132,6 +135,18 @@ class Workspace(context: Context) : ViewGroup(context) {
     private var downX = 0f
     private var downY = 0f
     private var lastX = 0f
+    private var pinch = 1f
+    private var pinching = false
+    private val scaler = android.view.ScaleGestureDetector(context, object : android.view.ScaleGestureDetector.SimpleOnScaleGestureListener() {
+        override fun onScale(d: android.view.ScaleGestureDetector): Boolean {
+            pinch *= d.scaleFactor
+            if (pinch < 0.8f && pinching) {
+                pinching = false // once per pinch
+                listener?.onPinchIn()
+            }
+            return true
+        }
+    })
     private var mode = 0 // 0 none, 1 pages, 2 vertical (drawer), 3 swipe up on an icon, 4 Today
     private var iconAction: (() -> Unit)? = null
     private var lastTapAt = 0L
@@ -234,6 +249,11 @@ class Workspace(context: Context) : ViewGroup(context) {
     }
 
     override fun onInterceptTouchEvent(e: MotionEvent): Boolean {
+        // A second finger means a pinch, whatever the first one was doing.
+        if (e.pointerCount >= 2) {
+            startPinch()
+            return true
+        }
         when (e.actionMasked) {
             MotionEvent.ACTION_DOWN -> {
                 downX = e.x
@@ -260,7 +280,25 @@ class Workspace(context: Context) : ViewGroup(context) {
         return false
     }
 
+    private fun startPinch() {
+        if (mode == 5) return
+        mode = 5
+        pinch = 1f
+        pinching = true
+        removeCallbacks(longPress)
+        if (!scroller.isFinished) snapTo(currentPage)
+    }
+
     override fun onTouchEvent(e: MotionEvent): Boolean {
+        if (e.pointerCount >= 2) startPinch()
+        if (mode == 5) {
+            scaler.onTouchEvent(e)
+            if (e.actionMasked == MotionEvent.ACTION_UP || e.actionMasked == MotionEvent.ACTION_CANCEL) {
+                mode = 0
+                snapTo(currentPage)
+            }
+            return true
+        }
         if (velocity == null) velocity = VelocityTracker.obtain()
         velocity?.addMovement(e)
         when (e.actionMasked) {

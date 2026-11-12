@@ -211,4 +211,26 @@ class LayoutTest {
     fun everyFolderStyleDraws() {
         assertEquals(listOf("grid", "cover", "chest", "bag", "cartridge", "stack", "floppy", "tv"), FolderArt.STYLES.map { it.first })
     }
+
+    @Test
+    fun pagesMoveAndDeleteKeepingTheirLabelsSetting() {
+        val layout = HomeLayout.empty(GridSize.MEDIUM)
+        layout.pages[0].add(AppItem(app(0), 0, 0))
+        layout.pages.add(mutableListOf(AppItem(app(1), 0, 0)))
+        layout.pages.add(mutableListOf(AppItem(app(2), 0, 0)))
+        layout.unlabelledPages.add(2)
+
+        layout.movePage(2, 0) // the last page to the front
+        assertEquals(app(2), (layout.pages[0][0] as AppItem).app)
+        assertEquals(setOf(0), layout.unlabelledPages) // its "labels off" came with it
+
+        val gone = layout.removePage(1) // the old first page
+        assertEquals(app(0), (gone.single() as AppItem).app)
+        assertEquals(listOf(app(2), app(1)), layout.pages.map { (it[0] as AppItem).app })
+        assertEquals(setOf(0), layout.unlabelledPages)
+
+        layout.removePage(0)
+        layout.removePage(0)
+        assertEquals(1, layout.pages.size) // there's always a page
+    }
 }
