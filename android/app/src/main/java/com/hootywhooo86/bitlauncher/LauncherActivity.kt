@@ -578,13 +578,17 @@ class LauncherActivity : Activity() {
     private fun bindFolder(view: AppIconView, folder: FolderItem, pageIndex: Int, source: Source = Source.HOME, dockIndex: Int = -1) {
         view.tagItem = folder
         view.sprite = null
-        view.folderSprites = folder.apps.take(4).map { icons.get(it) }
+        // The TV flips through up to a dozen apps; every other style shows the first four.
+        view.folderSprites = folder.apps.take(if (folder.style == "tv") 12 else 4).map { icons.get(it) }
         view.folderCover = folder.cover?.let { icons.get(it) }
         view.folderTint = folder.color
+        view.folderStyle = folder.style
+        view.folderCount = folder.apps.size
+        view.showCount = folder.showCount
         view.label = folder.name
         view.showLabel = prefs.labels && pageIndex !in layout.unlabelledPages
         view.iconSizeDp = prefs.iconDp()
-        view.setOnClickListener { openFolder(folder) }
+        view.setOnClickListener { view.playOpen { openFolder(folder) } }
         view.setOnLongClickListener {
             showFolderMenu(view, folder)
             true
@@ -595,6 +599,7 @@ class LauncherActivity : Activity() {
     private fun showFolderMenu(view: AppIconView, folder: FolderItem) {
         val entries = mutableListOf(
             PixelMenu.Entry("Open") { openFolder(folder) },
+            PixelMenu.Entry("Style") { showFolderStyles(view, folder) },
             PixelMenu.Entry("Colour") { showFolderColours(view, folder) },
             PixelMenu.Entry("Sort A-Z") {
                 val collator = java.text.Collator.getInstance()
@@ -613,8 +618,8 @@ class LauncherActivity : Activity() {
                 saveAndRebuild()
             },
         )
-        if (folder.cover != null) entries += PixelMenu.Entry("Show 4 apps as cover") {
-            folder.cover = null
+        entries += PixelMenu.Entry(if (folder.showCount) "Hide app count" else "Show app count") {
+            folder.showCount = !folder.showCount
             saveAndRebuild()
         }
         entries += PixelMenu.Entry("Remove folder") {
@@ -624,6 +629,17 @@ class LauncherActivity : Activity() {
             Pixel.say(this, "Folder removed. The apps are still in the app drawer.")
         }
         menu.show(view, entries, view.iconRect())
+    }
+
+    private fun showFolderStyles(view: AppIconView, folder: FolderItem) {
+        menu.show(view, FolderArt.STYLES.map { (key, name) ->
+            PixelMenu.Entry(if (folder.style == key) "$name *" else name) {
+                folder.style = key
+                // A big cover needs an app to show: the first, until you pick another.
+                if (key == "cover" && folder.cover == null) folder.cover = folder.apps.firstOrNull()
+                saveAndRebuild()
+            }
+        }, view.iconRect())
     }
 
     private fun showFolderColours(view: AppIconView, folder: FolderItem) {
@@ -1229,6 +1245,7 @@ class LauncherActivity : Activity() {
     private fun fillFolder(folder: FolderItem) {
         val cell = Pixel.dpi(this, prefs.iconDp() + if (folder.labels) 40 else 20)
         folderView.setAccent(prefs.accent, folder.color)
+        folderView.setInventory(folder.style == "bag")
         folderView.setIcons(folder.apps.map { key -> AppIconView(this).also { bindIcon(it, key, Source.FOLDER, folder = folder) } }, cell)
         // Dragged to a new spot inside: that's the folder's order now (and its cover, if the first four changed).
         folderView.onReordered = { icons ->
@@ -1342,11 +1359,13 @@ class LauncherActivity : Activity() {
                 save()
                 rebuild()
             }
-            Source.FOLDER -> entries += if (folder?.cover == key) PixelMenu.Entry("Stop using as cover") {
-                folder?.cover = null
+            Source.FOLDER -> entries += if (folder?.cover == key && folder.style == "cover") PixelMenu.Entry("Stop using as cover") {
+                folder.cover = null
+                folder.style = "grid"
                 saveAndRebuild()
             } else PixelMenu.Entry("Use as folder cover") {
                 folder?.cover = key
+                folder?.style = "cover"
                 saveAndRebuild()
             }
             Source.DRAWER -> {}

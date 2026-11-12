@@ -55,10 +55,18 @@ class FolderItem(var name: String, val apps: MutableList<AppKey>, override var x
     /** Labels under the apps inside this folder. */
     var labels = true
 
+    /** How the folder's icon looks (see FolderArt.STYLES). */
+    var style = "grid"
+
+    /** Show how many apps are inside, on the icon. */
+    var showCount = false
+
     override fun toJson(): JSONObject = JSONObject()
         .put("t", "folder").put("name", name).put("x", x).put("y", y)
         .put("apps", JSONArray().also { a -> apps.forEach { a.put(it.toJson()) } })
         .put("labels", labels)
+        .put("style", style)
+        .put("count", showCount)
         .also { o ->
             cover?.let { o.put("cover", it.toJson()) }
             color?.let { o.put("color", it) }
@@ -327,6 +335,9 @@ class HomeLayout(var grid: GridSize, val pages: MutableList<MutableList<Item>>, 
                     cover = o.optJSONObject("cover")?.let(AppKey::fromJson)
                     color = if (o.has("color")) o.getInt("color") else null
                     labels = o.optBoolean("labels", true)
+                    // Folders from before styles: one with a cover chosen was a "cover" folder.
+                    style = o.optString("style").takeIf { it.isNotEmpty() } ?: if (cover != null) "cover" else "grid"
+                    showCount = o.optBoolean("count", false)
                 }
             }
             "widget" -> WidgetItem(o.getInt("id"), o.optString("provider"), o.getInt("x"), o.getInt("y"), o.getInt("w"), o.getInt("h"))

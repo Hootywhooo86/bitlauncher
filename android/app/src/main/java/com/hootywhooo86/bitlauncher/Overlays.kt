@@ -1,6 +1,7 @@
 package com.hootywhooo86.bitlauncher
 
 import android.content.Context
+import android.graphics.Paint
 import android.graphics.Rect
 import android.text.Editable
 import android.text.InputType
@@ -291,6 +292,33 @@ class FolderGrid(context: Context) : ViewGroup(context) {
     /** Children in slot order: order[0] is spot 1. */
     val order = mutableListOf<View>()
 
+    /** Draw an inventory box behind every slot (the inventory bag's look). */
+    var slots = false
+        set(v) { field = v; setWillNotDraw(!v); invalidate() }
+    private val slotPaint = Paint()
+
+    override fun onDraw(canvas: android.graphics.Canvas) {
+        if (!slots) return
+        // Whole rows of boxes, so empty spaces read as free slots.
+        val count = ((order.size + columns - 1) / columns).coerceAtLeast(1) * columns
+        val inset = Pixel.dp(context, 4f)
+        val edge = Pixel.dp(context, 2f)
+        for (i in 0 until count) {
+            val l = slotLeft(i) + inset
+            val t = slotTop(i) + inset
+            val r = l + cellWidth() - inset * 2
+            val b = t + cellHeight - inset * 2
+            slotPaint.color = withAlpha(Pixel.MUTED, 110)
+            canvas.drawRect(l, t, r, b, slotPaint)
+            slotPaint.color = withAlpha(Pixel.BG, 230)
+            canvas.drawRect(l + edge, t + edge, r - edge, b - edge, slotPaint)
+            // A lighter top-left edge, like a recessed box.
+            slotPaint.color = withAlpha(Pixel.SHADOW, 200)
+            canvas.drawRect(l + edge, t + edge, r - edge, t + edge * 2, slotPaint)
+            canvas.drawRect(l + edge, t + edge, l + edge * 2, b - edge, slotPaint)
+        }
+    }
+
     fun cellWidth() = (width - paddingLeft - paddingRight) / columns.toFloat()
 
     fun slotLeft(slot: Int) = paddingLeft + (slot % columns) * cellWidth()
@@ -426,6 +454,11 @@ class FolderView(context: Context) : FrameLayout(context) {
 
     fun setAccent(accent: Int, tint: Int? = null) {
         panel.background = PanelDrawable(context, if (tint != null) blend(Pixel.PANEL, tint, 0.18f) else Pixel.PANEL, tint ?: accent)
+    }
+
+    /** The inventory bag opens as an RPG inventory: every app in its own box. */
+    fun setInventory(on: Boolean) {
+        grid.slots = on
     }
 
     /** Lay [icons] out in slots: four across, five once the folder is big. */

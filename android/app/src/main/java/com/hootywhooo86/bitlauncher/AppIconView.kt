@@ -29,6 +29,65 @@ class AppIconView(context: Context) : View(context) {
 
     /** A folder's chosen colour, or null for the plain frame. */
     var folderTint: Int? = null
+
+    /** A folder's look: "grid" (the 2x2 frame), or one of FolderArt.STYLES. */
+    var folderStyle = "grid"
+        set(v) { field = v; updateChannelSurfing() }
+
+    /** Apps in the folder, shown as a small number when [showCount] is on. */
+    var folderCount = 0
+    var showCount = false
+
+    private var channel = 0
+    private var lid = 0f
+    private val surf = object : Runnable {
+        override fun run() {
+            channel++
+            invalidate()
+            postDelayed(this, 2500)
+        }
+    }
+
+    /** The TV flips through the apps inside, but only while it's on screen. */
+    private fun updateChannelSurfing() {
+        removeCallbacks(surf)
+        if (folderStyle == "tv" && isAttachedToWindow && windowVisibility == VISIBLE && Pixel.motion(context)) postDelayed(surf, 2500)
+    }
+
+    override fun onAttachedToWindow() {
+        super.onAttachedToWindow()
+        updateChannelSurfing()
+    }
+
+    override fun onDetachedFromWindow() {
+        super.onDetachedFromWindow()
+        removeCallbacks(surf)
+    }
+
+    override fun onWindowVisibilityChanged(visibility: Int) {
+        super.onWindowVisibilityChanged(visibility)
+        updateChannelSurfing()
+    }
+
+    /**
+     * A folder opening: the chest's lid flips up first (a moment of fun, under a fifth of a
+     * second); everything else opens straight away.
+     */
+    fun playOpen(then: () -> Unit) {
+        if (folderStyle != "chest" || !Pixel.motion(context)) return then()
+        android.animation.ValueAnimator.ofFloat(0f, 1f).apply {
+            duration = 170
+            interpolator = Ease.enter
+            addUpdateListener { lid = it.animatedValue as Float; invalidate() }
+            addListener(object : android.animation.AnimatorListenerAdapter() {
+                override fun onAnimationEnd(animation: android.animation.Animator) {
+                    then()
+                    postDelayed({ lid = 0f; invalidate() }, 300)
+                }
+            })
+            start()
+        }
+    }
     var label: String = ""
     var showLabel = true
     var iconSizeDp = 50
@@ -125,23 +184,19 @@ class AppIconView(context: Context) : View(context) {
         val r = iconRect()
         dst.set(r)
         val folderApps = folderSprites
+        if (folderApps != null && folderStyle != "grid") {
+            val look = FolderArt.Look(folderStyle, folderApps, folderCover, folderTint, channel, lid)
+            if (FolderArt.draw(canvas, r, look)) {
+                drawExtras(canvas, r)
+                return
+            }
+        }
         if (folderApps != null) {
             val tint = folderTint
             folder.fill = if (tint != null) withAlpha(blend(Pixel.PANEL, tint, 0.3f), 235) else withAlpha(Pixel.PANEL, 230)
             folder.border = tint ?: Pixel.MUTED
             folder.setBounds(r)
             folder.draw(canvas)
-            val cover = folderCover
-            if (cover != null) {
-                // One app, big, still a whole number of pixels per sprite pixel.
-                val size = max(IconCache.SIZE, ((r.width() * 0.72f) / IconCache.SIZE).toInt() * IconCache.SIZE)
-                val l = r.left + (r.width() - size) / 2
-                val t = r.top + (r.height() - size) / 2
-                dst.set(l.toFloat(), t.toFloat(), (l + size).toFloat(), (t + size).toFloat())
-                canvas.drawBitmap(cover, null, dst, spritePaint)
-                drawExtras(canvas, r)
-                return
-            }
             // 2x2 mini sprites, each a whole number of pixels.
             val inner = r.width() - 6 * px.toInt()
             val cell = max(IconCache.SIZE / 2, (inner / 2 / (IconCache.SIZE / 2)) * (IconCache.SIZE / 2))
@@ -174,7 +229,28 @@ class AppIconView(context: Context) : View(context) {
     }
 
     /** The notification dot and the label: the same for apps and folders. */
+    private val countPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        typeface = Pixel.font(context)
+        color = Pixel.INK
+    }
+
     private fun drawExtras(canvas: Canvas, r: Rect) {
+        if (showCount && folderCount > 0) {
+            // A little numbered tag on the bottom-left corner.
+            val p = r.width() / IconCache.SIZE.toFloat()
+            val text = if (folderCount > 99) "99" else folderCount.toString()
+            countPaint.textSize = p * 6
+            val w = countPaint.measureText(text) + p * 3
+            val h = p * 8
+            val l = r.left.toFloat()
+            val b = r.bottom.toFloat()
+            dotPaint.color = Pixel.SHADOW
+            canvas.drawRect(l, b - h, l + w, b, dotPaint)
+            dotPaint.color = accent
+            canvas.drawRect(l + p, b - h + p, l + w - p, b - p, dotPaint)
+            countPaint.color = Pixel.BG
+            canvas.drawText(text, l + p * 1.5f, b - p * 2f, countPaint)
+        }
         if (hasDot) {
             // A 3x3 sprite-pixel square on the top-right corner, outlined so it reads on any icon.
             val p = r.width() / IconCache.SIZE.toFloat()

@@ -193,4 +193,22 @@ class LayoutTest {
         assertTrue(moved.any { it is FolderItem && it.apps == listOf(app(7), app(8)) })
         assertEquals(setOf(app(0), app(1), app(2), app(3), app(4), app(7), app(8)), layout.allApps().toSet())
     }
+
+    @Test
+    fun folderStylesSaveAndOldCoverFoldersKeepTheirLook() {
+        val layout = HomeLayout.empty(GridSize.MEDIUM)
+        layout.pages[0].add(FolderItem("Loot", mutableListOf(app(1), app(2)), 0, 0).apply { style = "chest"; showCount = true })
+        val back = HomeLayout.fromJson(JSONObject(layout.toJson().toString())).pages[0].single() as FolderItem
+        assertEquals("chest", back.style)
+        assertTrue(back.showCount)
+        // Saved before styles existed, with a cover picked: it should still look like a cover.
+        val old = JSONObject("""{"t":"folder","name":"F","x":0,"y":0,"apps":[{"pkg":"pkg.1","cls":"Main","user":0},{"pkg":"pkg.2","cls":"Main","user":0}],"cover":{"pkg":"pkg.2","cls":"Main","user":0}}""")
+        val legacy = HomeLayout.fromJson(JSONObject().put("grid", "5x6").put("pages", org.json.JSONArray().put(org.json.JSONArray().put(old))))
+        assertEquals("cover", (legacy.pages[0].single() as FolderItem).style)
+    }
+
+    @Test
+    fun everyFolderStyleDraws() {
+        assertEquals(listOf("grid", "cover", "chest", "bag", "cartridge", "stack", "floppy", "tv"), FolderArt.STYLES.map { it.first })
+    }
 }
