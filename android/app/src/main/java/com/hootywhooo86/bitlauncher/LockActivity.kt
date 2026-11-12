@@ -190,6 +190,7 @@ class LockActivity : Activity() {
             val cached = if (prefs.weather) WeatherClient(this).cached() else null
             root.addView(SceneView(this).apply {
                 scene = prefs.scene
+                this.accent = prefs.accent
                 sunrise = cached?.sunrise
                 sunset = cached?.sunset
                 sky = cached?.sky

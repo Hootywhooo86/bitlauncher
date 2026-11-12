@@ -988,6 +988,7 @@ class LauncherActivity : Activity() {
         val key = prefs.scene
         scene.visibility = if (key == "none") View.GONE else View.VISIBLE
         scene.scene = key
+        scene.accent = prefs.accent
     }
 
     /** Fetch weather if it's on and stale; then let everything that shows it update. */

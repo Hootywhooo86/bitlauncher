@@ -31,7 +31,7 @@ import kotlin.random.Random
 class SceneView(context: Context) : View(context) {
     companion object {
         /** (key, name). "none" uses the phone's own wallpaper. */
-        val SCENES = listOf("none" to "Phone wallpaper", "prairie" to "Prairie", "rockies" to "Rockies", "city" to "Night City", "desert" to "Desert")
+        val SCENES = listOf("none" to "Phone wallpaper", "prairie" to "Prairie", "railway" to "Railway", "rockies" to "Rockies", "city" to "Night City", "desert" to "Desert")
 
         private const val MAX_SCREENS = 8
         private val FACTORS = floatArrayOf(0.12f, 0.3f, 0.6f)
@@ -63,6 +63,60 @@ class SceneView(context: Context) : View(context) {
     private var generation = 0
 
     private var drops = FloatArray(0) // x, y pairs, virtual px
+
+    // The railway scene's train: where it is (virtual px, screen-relative), and when the next one comes.
+    private var trainX = Float.NaN
+    private var trainTick = 0
+    private var light = Light(1f, 0f, 0.5f, 0f)
+    private val trainCars = 6
+
+    /** The locomotive wears the accent colour. */
+    var accent = Pixel.ACCENTS[0]
+    private val trainFrame = object : Runnable {
+        override fun run() {
+            if (trainX.isNaN()) return
+            trainX += 1f // about 30 virtual px a second
+            trainTick++
+            if (trainX > vw + 4) {
+                trainX = Float.NaN
+                scheduleTrain(60_000L + Random.nextLong(60_000L))
+            } else {
+                main.postDelayed(this, 33)
+            }
+            invalidate()
+        }
+    }
+    private val nextTrain = Runnable { startTrain() }
+
+    private fun scheduleTrain(delay: Long) {
+        main.removeCallbacks(nextTrain)
+        if (scene == "railway") main.postDelayed(nextTrain, delay)
+    }
+
+    /** Send a train through, unless it's off-screen time or the phone is saving power. */
+    fun startTrain() {
+        if (scene != "railway" || windowVisibility != VISIBLE || !Pixel.motion(context) || savingPower() || !trainX.isNaN()) return
+        trainX = -TrainArt.length(trainCars).toFloat()
+        main.post(trainFrame)
+    }
+
+    private fun stopTrain() {
+        main.removeCallbacks(trainFrame)
+        main.removeCallbacks(nextTrain)
+        trainX = Float.NaN
+    }
+
+    private fun drawTrain(canvas: Canvas) {
+        if (trainX.isNaN() || scene != "railway") return
+        val factor = FACTORS[2]
+        val x = trainX - scroll * factor * vw
+        val base = (vh * 0.62f).toInt() + Painter.RAIL_DROP.toFloat()
+        val night = light.day < 0.4f
+        TrainArt.draw({ x0, y0, w, h, c ->
+            particlePaint.color = c
+            canvas.drawRect(x0, y0, x0 + w, y0 + h, particlePaint)
+        }, x, base, accent, trainCars, trainTick, true, { Painter.lit(it, light) }, night)
+    }
     private var flash = 0f
     private val frame = object : Runnable {
         override fun run() {
@@ -106,6 +160,7 @@ class SceneView(context: Context) : View(context) {
         super.onDetachedFromWindow()
         main.removeCallbacks(tick)
         stopAnimating()
+        stopTrain()
     }
 
     override fun onWindowVisibilityChanged(visibility: Int) {
@@ -113,8 +168,11 @@ class SceneView(context: Context) : View(context) {
         if (visibility == VISIBLE) {
             if (timeBucket() != bucket) regenerate()
             updateAnimation()
+            // Coming home on the railway scene: a train shortly after.
+            if (scene == "railway" && trainX.isNaN()) scheduleTrain(2500)
         } else {
             stopAnimating()
+            stopTrain()
         }
     }
 
@@ -131,6 +189,7 @@ class SceneView(context: Context) : View(context) {
         val weather = sky
         val now = System.currentTimeMillis()
         val light = Light.at(now, sunrise, sunset)
+        this.light = light
         worker.execute {
             val skyPixels = Painter.sky(w, h, light, weather)
             val layerBitmaps = Painter.layers(sceneKey, w, h, light, FACTORS, MAX_SCREENS).map { (lw, px) ->
@@ -155,6 +214,7 @@ class SceneView(context: Context) : View(context) {
             val dx = -(scroll * FACTORS.getOrElse(i) { 0.5f } * vw)
             canvas.drawBitmap(bmp, Math.round(dx).toFloat(), 0f, paint)
         }
+        drawTrain(canvas)
         drawWeather(canvas)
         canvas.restore()
     }
@@ -347,7 +407,7 @@ object Painter {
     }
 
     /** Darken and cool a colour for night. */
-    private fun lit(c: Int, light: Light): Int {
+    fun lit(c: Int, light: Light): Int {
         val night = mix(c, 0xFF141633.toInt(), 0.72f)
         return mix(mix(night, c, light.day), 0xFFFF9C5A.toInt(), light.warm * 0.12f)
     }
@@ -368,6 +428,7 @@ object Painter {
             val r = Random(scene.hashCode() * 31 + i)
             when (scene) {
                 "prairie" -> prairie(i, lw, h, horizon, light, r, ::fill, ::rect)
+                "railway" -> railway(i, lw, h, horizon, light, r, ::fill, ::rect)
                 "rockies" -> rockies(i, lw, h, horizon, light, r, ::fill, ::rect)
                 "city" -> city(i, lw, h, horizon, light, r, ::fill, ::rect, px)
                 "desert" -> desert(i, lw, h, horizon, light, r, ::fill, ::rect)
@@ -434,6 +495,63 @@ object Painter {
                 }
                 rect(0, top - 7, lw, top - 6, wood)
                 rect(0, top - 3, lw, top - 2, wood)
+            }
+        }
+    }
+
+    /** Where the rails sit in the railway scene (the top of the rail), from the horizon. */
+    const val RAIL_DROP = 22
+
+    private fun railway(layer: Int, lw: Int, h: Int, hz: Int, l: Light, r: Random, fill: Fill, rect: Rect) {
+        when (layer) {
+            0 -> { // far hills, and a distant elevator or two
+                val ridge = Ridge(31, floatArrayOf(4f, 2f), floatArrayOf(0.025f, 0.08f))
+                val c = lit(0xFF627F5A.toInt(), l)
+                for (x in 0 until lw) fill(x, (hz - 8 + ridge.at(x)).toInt(), hz + 14, c)
+                var x = 50 + r.nextInt(60)
+                while (x < lw - 8) {
+                    rect(x, hz - 18, x + 5, hz - 4, lit(0xFF7C5A4A.toInt(), l))
+                    rect(x - 1, hz - 20, x + 6, hz - 18, lit(0xFF4E3A33.toInt(), l))
+                    x += 160 + r.nextInt(120)
+                }
+            }
+            1 -> { // fields, then telegraph poles with their wires along the line
+                val field = lit(0xFFB0B25C.toInt(), l)
+                val row = lit(0xFF9CA151.toInt(), l)
+                for (x in 0 until lw) for (y in hz + 2 until h) fill(x, y, y + 1, if ((y - hz) % 4 == 1) row else field)
+                val pole = lit(0xFF5A4030.toInt(), l)
+                val wire = lit(0xFF2E2A2A.toInt(), l)
+                val top = hz - 14
+                var x = 4
+                var last = -1
+                while (x < lw) {
+                    rect(x, top, x + 1, hz + RAIL_DROP - 6, pole)
+                    rect(x - 2, top + 1, x + 3, top + 2, pole) // crossarm
+                    if (last >= 0) {
+                        // Wires sag between poles.
+                        for (wx in last + 1 until x) {
+                            val t = (wx - last).toFloat() / (x - last)
+                            val sag = (4 * t * (1 - t) * 3).toInt()
+                            fill(wx, top + 1 + sag, top + 2 + sag, wire)
+                        }
+                    }
+                    last = x
+                    x += 34
+                }
+            }
+            2 -> { // ballast, ties and rails, then grass in front
+                val rail = hz + RAIL_DROP
+                val ballast = lit(0xFF7D7468.toInt(), l)
+                val tie = lit(0xFF4B3A2C.toInt(), l)
+                val steel = lit(0xFFB9BDC7.toInt(), l)
+                val grass = lit(0xFF6A8E42.toInt(), l)
+                rect(0, rail - 1, lw, rail + 4, ballast)
+                for (x in 0 until lw step 3) rect(x, rail + 1, x + 2, rail + 2, tie)
+                rect(0, rail, lw, rail + 1, steel)
+                for (x in 0 until lw) {
+                    fill(x, rail + 4, h, grass)
+                    if (r.nextInt(6) == 0) fill(x, rail + 3, rail + 4, lit(0xFF57773A.toInt(), l))
+                }
             }
         }
     }

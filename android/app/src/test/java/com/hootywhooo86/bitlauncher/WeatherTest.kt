@@ -54,4 +54,13 @@ class WeatherTest {
         assertTrue(dusk.day in 0.3f..0.7f)
         assertTrue(dusk.warm > 0.9f)
     }
+
+    @Test
+    fun railwaySceneHasItsLayersAndATrainFitsOnTheTrack() {
+        val layers = Painter.layers("railway", 160, 340, Light(1f, 0f, 0.5f, 0f), floatArrayOf(0.12f, 0.3f, 0.6f), 8)
+        assertEquals(3, layers.size)
+        layers.forEach { (_, px) -> assertTrue(px.any { it != 0 }) }
+        assertEquals(98, TrainArt.length(6)) // six boxcars and the diesel
+        assertTrue(SceneView.SCENES.any { it.first == "railway" })
+    }
 }
