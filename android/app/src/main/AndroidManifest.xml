@@ -7,6 +7,8 @@
     <uses-permission android:name="android.permission.REQUEST_DELETE_PACKAGES" />
     <!-- Only if you turn on contact search in Settings; asked for then, not before. -->
     <uses-permission android:name="android.permission.READ_CONTACTS" />
+    <!-- The Today page's "Coming up" card, only once you tap Show my calendar. Read only. -->
+    <uses-permission android:name="android.permission.READ_CALENDAR" />
     <!-- Weather only, and only once you turn it on: rough location to Open-Meteo. -->
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />

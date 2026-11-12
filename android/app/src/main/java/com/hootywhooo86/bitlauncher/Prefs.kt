@@ -104,6 +104,18 @@ class Prefs(context: Context) {
         get() = sp.getBoolean("fahrenheit", WeatherCodes.usesFahrenheit())
         set(v) = sp.edit().putBoolean("fahrenheit", v).apply()
 
+        /** Widgets on the Today page, top to bottom: id, provider, height in dp. */
+    var todayWidgets: List<Triple<Int, String, Int>>
+        get() = try {
+            val a = JSONArray(sp.getString("todayWidgets", "[]"))
+            (0 until a.length()).map { i -> a.getJSONObject(i).let { Triple(it.getInt("id"), it.getString("provider"), it.getInt("h")) } }
+        } catch (e: Exception) {
+            emptyList()
+        }
+        set(v) = sp.edit().putString("todayWidgets", JSONArray().also { a ->
+            v.forEach { (id, provider, h) -> a.put(JSONObject().put("id", id).put("provider", provider).put("h", h)) }
+        }.toString()).apply()
+
         /** App ids hidden from the drawer. */
     var hidden: Set<String>
         get() = sp.getStringSet("hidden", emptySet())!!.toSet()

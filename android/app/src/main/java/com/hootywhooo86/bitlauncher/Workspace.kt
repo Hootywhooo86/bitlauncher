@@ -109,6 +109,10 @@ class Workspace(context: Context) : ViewGroup(context) {
         fun onSwipeDown()
         fun onEmptyLongPress(x: Float, y: Float)
 
+        /** Swiping right from the first page pulls out the Today page: [px] so far, then the release. */
+        fun onTodayDrag(px: Float)
+        fun onTodayRelease(px: Float, velocityX: Float)
+
         /** Double tap on empty space. */
         fun onDoubleTap()
 
@@ -128,7 +132,7 @@ class Workspace(context: Context) : ViewGroup(context) {
     private var downX = 0f
     private var downY = 0f
     private var lastX = 0f
-    private var mode = 0 // 0 none, 1 horizontal, 2 vertical (drawer), 3 swipe up on an icon
+    private var mode = 0 // 0 none, 1 pages, 2 vertical (drawer), 3 swipe up on an icon, 4 Today
     private var iconAction: (() -> Unit)? = null
     private var lastTapAt = 0L
     private var lastTapX = 0f
@@ -220,6 +224,9 @@ class Workspace(context: Context) : ViewGroup(context) {
         }
     }
 
+    /** On the first page, a swipe to the right pulls out Today instead of bouncing. */
+    private fun horizontalMode(right: Boolean): Int = if (right && currentPage == 0 && scrollX <= 0) 4 else 1
+
     /** Swiping up from an icon with an action runs it; otherwise vertical swipes are the drawer and the shade. */
     private fun verticalMode(up: Boolean): Int {
         iconAction = if (up) listener?.iconSwipeAt(downX, downY) else null
@@ -242,7 +249,7 @@ class Workspace(context: Context) : ViewGroup(context) {
             MotionEvent.ACTION_MOVE -> {
                 val dx = abs(e.x - downX)
                 val dy = abs(e.y - downY)
-                if (dx > slop && dx > dy) mode = 1
+                if (dx > slop && dx > dy) mode = horizontalMode(e.x > downX)
                 else if (dy > slop && dy > dx) mode = verticalMode(e.y < downY)
                 if (mode != 0) {
                     lastX = e.x
@@ -271,7 +278,7 @@ class Workspace(context: Context) : ViewGroup(context) {
                 val dy = abs(e.y - downY)
                 if (dx > slop || dy > slop) moved = true
                 if (mode == 0) {
-                    if (dx > slop && dx > dy) mode = 1 else if (dy > slop && dy > dx) mode = verticalMode(e.y < downY)
+                    if (dx > slop && dx > dy) mode = horizontalMode(e.x > downX) else if (dy > slop && dy > dx) mode = verticalMode(e.y < downY)
                     if (mode != 0) removeCallbacks(longPress)
                 }
                 if (mode == 1) {
@@ -282,6 +289,8 @@ class Workspace(context: Context) : ViewGroup(context) {
                     scrollTo((scrollX + delta).toInt().coerceIn(-width / 4, maxX + width / 4), 0)
                 } else if (mode == 2 && e.y < downY) {
                     listener?.onDrawerDrag(downY - e.y)
+                } else if (mode == 4) {
+                    listener?.onTodayDrag((e.x - downX).coerceAtLeast(0f))
                 }
                 lastX = e.x
             }
@@ -302,6 +311,8 @@ class Workspace(context: Context) : ViewGroup(context) {
                     val dy = e.y - downY
                     if (dy < 0) listener?.onDrawerRelease(-dy, if (e.actionMasked == MotionEvent.ACTION_UP) vy else 0f)
                     else if (e.actionMasked == MotionEvent.ACTION_UP && (dy > slop * 3 || vy > minFling)) listener?.onSwipeDown()
+                } else if (mode == 4) {
+                    listener?.onTodayRelease((e.x - downX).coerceAtLeast(0f), if (e.actionMasked == MotionEvent.ACTION_UP) vx else 0f)
                 } else if (mode == 3) {
                     if (e.actionMasked == MotionEvent.ACTION_UP && (e.y - downY < -slop * 3 || vy < -minFling)) iconAction?.invoke()
                 } else if (e.actionMasked == MotionEvent.ACTION_UP && !moved && !longPressFired) {

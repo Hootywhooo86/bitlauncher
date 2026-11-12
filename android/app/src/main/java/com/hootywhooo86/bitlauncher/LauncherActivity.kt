@@ -30,6 +30,11 @@ class LauncherActivity : Activity() {
     private lateinit var icons: IconCache
     private lateinit var usage: Usage
     private lateinit var scene: SceneView
+    private lateinit var today: TodayView
+    private lateinit var media: MediaSource
+    private var lastWeather: WeatherNow? = null
+    private val todayWidgetViews = HashMap<Int, PixelWidgetView>()
+    private var widgetForToday = false
     private lateinit var weather: WeatherClient
     private lateinit var apps: AppList
     private lateinit var layout: HomeLayout
@@ -176,6 +181,10 @@ class LauncherActivity : Activity() {
             closeDrawer()
             closed = true
         }
+        if (today.visibility == View.VISIBLE) {
+            settleToday(0f, 0f)
+            closed = true
+        }
         return closed
     }
 
@@ -210,6 +219,8 @@ class LauncherActivity : Activity() {
                 dots.current = page / workspace.panes
             }
 
+            override fun onTodayDrag(px: Float) = dragToday(px)
+            override fun onTodayRelease(px: Float, velocityX: Float) = releaseToday(px, velocityX)
             override fun onDoubleTap() = doubleTap()
             override fun iconSwipeAt(x: Float, y: Float) = swipeActionAt(x, y)
         }
@@ -274,6 +285,16 @@ class LauncherActivity : Activity() {
         }
         root.addView(drawer, FrameLayout.LayoutParams(-1, -1))
 
+        today = TodayView(this)
+        today.visibility = View.GONE
+        today.onPull = { px -> todayAnim?.cancel(); setTodayProgress(1f - px / todayWidth()) }
+        today.onRelease = { px, vx ->
+            val close = vx < -flingSpeed || (vx < flingSpeed && px > todayWidth() * 0.3f)
+            settleToday(if (close) 0f else 1f, kotlin.math.abs(vx))
+        }
+        root.addView(today, FrameLayout.LayoutParams(-1, -1, Gravity.START))
+        media = MediaSource(this) { if (today.visibility == View.VISIBLE) renderToday() }
+
         folderView = FolderView(this)
         folderView.visibility = View.GONE
         folderView.onClose = { closeFolder() }
@@ -335,6 +356,9 @@ class LauncherActivity : Activity() {
         // A wide screen gets more drawer columns rather than bigger gaps.
         val drawerCols = maxOf(layout.cols(), screenW / Pixel.dpi(this, prefs.iconDp() + 56))
         drawer.setColumns(if (workspace.panes > 1) drawerCols else layout.cols())
+        // Today covers the whole screen on a phone, the left page on an unfolded Fold.
+        (today.layoutParams as FrameLayout.LayoutParams).width = if (workspace.panes > 1) paneW + gap * 2 else -1
+        today.setInsets(insetTop, insetBottom)
         drawer.setPadding(0, insetTop, 0, 0)
         drawer.setBottomInset(insetBottom)
         folderView.setPadding(0, insetTop, 0, insetBottom)
@@ -661,8 +685,155 @@ class LauncherActivity : Activity() {
         onWeather(w)
     }
 
-    /** Hook for the Today page (and anything else that shows weather). */
-    private fun onWeather(w: WeatherNow?) {}
+    private fun onWeather(w: WeatherNow?) {
+        lastWeather = w
+        if (today.visibility == View.VISIBLE) renderToday()
+    }
+
+    // ---------------------------------------------------------------- Today
+
+    private var todayAnim: android.animation.ValueAnimator? = null
+
+    private fun todayWidth() = (if (today.width > 0) today.width else root.width).toFloat().coerceAtLeast(1f)
+
+    private fun setTodayProgress(progress: Float) {
+        val p = progress.coerceIn(0f, 1f)
+        today.translationX = -todayWidth() * (1f - p)
+        today.alpha = 0.4f + 0.6f * p
+        for (v in listOf(workspace, dock, dots, header)) v.alpha = 1f - 0.5f * p
+    }
+
+    private fun todayProgress() = if (today.visibility != View.VISIBLE) 0f else 1f + today.translationX / todayWidth()
+
+    private fun prepareToday() {
+        todayAnim?.cancel()
+        if (today.visibility == View.VISIBLE) return
+        menu.dismiss()
+        renderToday()
+        media.start()
+        setTodayProgress(0f)
+        today.visibility = View.VISIBLE
+    }
+
+    private fun dragToday(px: Float) {
+        prepareToday()
+        setTodayProgress(px / todayWidth())
+    }
+
+    private fun releaseToday(px: Float, velocityX: Float) {
+        val open = velocityX > flingSpeed || (velocityX > -flingSpeed && px / todayWidth() > 0.3f)
+        settleToday(if (open) 1f else 0f, kotlin.math.abs(velocityX))
+    }
+
+    private fun settleToday(target: Float, velocity: Float) {
+        todayAnim?.cancel()
+        val from = todayProgress()
+        val done = {
+            if (target == 0f) {
+                today.visibility = View.GONE
+                media.stop()
+                setTodayProgress(0f)
+                for (v in listOf(workspace, dock, dots, header)) v.alpha = 1f
+            }
+        }
+        if (!Pixel.motion(this) || from == target) {
+            setTodayProgress(target)
+            done()
+            return
+        }
+        val w = todayWidth()
+        todayAnim = android.animation.ValueAnimator.ofFloat(from, target).apply {
+            duration = Ease.finishDuration(kotlin.math.abs(target - from) * w, w, velocity)
+            interpolator = if (target == 1f) Ease.move else Ease.exit
+            addUpdateListener { setTodayProgress(it.animatedValue as Float) }
+            addListener(object : android.animation.AnimatorListenerAdapter() {
+                private var cancelled = false
+                override fun onAnimationCancel(animation: android.animation.Animator) { cancelled = true }
+                override fun onAnimationEnd(animation: android.animation.Animator) { if (!cancelled) done() }
+            })
+            start()
+        }
+    }
+
+    /** Fill Today: date, weather, calendar, now playing, then your widgets and the add button. */
+    private fun renderToday() {
+        val accent = prefs.accent
+        val cards = today.cards
+        // Widget views are kept and moved, not re-made, so they don't flicker or lose state.
+        for (v in todayWidgetViews.values) (v.parent as? ViewGroup)?.removeView(v)
+        cards.removeAllViews()
+        cards.addView(Pixel.label(this, java.text.SimpleDateFormat("EEEE", java.util.Locale.getDefault()).format(java.util.Date()).uppercase(), 11f, accent))
+        cards.addView(Pixel.label(this, java.text.SimpleDateFormat("d MMMM", java.util.Locale.getDefault()).format(java.util.Date()).uppercase(), 20f, Pixel.INK).apply {
+            setPadding(0, Pixel.dpi(context, 6), 0, Pixel.dpi(context, 16))
+        })
+        cards.addView(TodayCards.weather(this, accent, lastWeather.takeIf { prefs.weather },
+            if (prefs.weather) weather.problem else null, prefs.fahrenheit) { startActivity(Intent(this, SettingsActivity::class.java)) })
+        cards.addView(TodayCards.events(this, accent,
+            if (CalendarSource.hasPermission(this)) CalendarSource.upcoming(this) else null,
+            onAsk = { requestPermissions(arrayOf(android.Manifest.permission.READ_CALENDAR), REQ_CALENDAR) },
+            onOpen = { e ->
+                try {
+                    startActivity(Intent(Intent.ACTION_VIEW, android.content.ContentUris.withAppendedId(android.provider.CalendarContract.Events.CONTENT_URI, e.id))
+                        .putExtra(android.provider.CalendarContract.EXTRA_EVENT_BEGIN_TIME, e.begin)
+                        .putExtra(android.provider.CalendarContract.EXTRA_EVENT_END_TIME, e.end))
+                } catch (ex: Exception) {
+                    Pixel.say(this, "No calendar app found to open that event.")
+                }
+            }))
+        media.current()?.let { cards.addView(TodayCards.media(this, accent, it)) }
+
+        val stored = prefs.todayWidgets
+        for ((id, _, hDp) in stored) {
+            val v = todayWidgetView(id) ?: continue
+            cards.addView(v, android.widget.LinearLayout.LayoutParams(-1, Pixel.dpi(this, hDp)).apply { bottomMargin = Pixel.dpi(this@LauncherActivity, 10) })
+        }
+        // Forget widgets whose app is gone.
+        val live = stored.filter { widgetManager.getAppWidgetInfo(it.first) != null }
+        if (live.size != stored.size) {
+            stored.filterNot { it in live }.forEach { widgetHost.deleteAppWidgetId(it.first); todayWidgetViews.remove(it.first) }
+            prefs.todayWidgets = live
+        }
+        cards.addView(Pixel.button(this, "+ ADD WIDGET", accent) {
+            widgetForToday = true
+            showWidgetPicker()
+        }, android.widget.LinearLayout.LayoutParams(-1, -2).apply { topMargin = Pixel.dpi(this@LauncherActivity, 4) })
+        if (stored.isEmpty()) cards.addView(Pixel.label(this, "PUT RAILTIME, FIT OR ANY WIDGET HERE", 9f, Pixel.MUTED).apply {
+            gravity = Gravity.CENTER
+            setPadding(0, Pixel.dpi(context, 10), 0, 0)
+        })
+    }
+
+    private fun todayWidgetView(id: Int): PixelWidgetView? {
+        todayWidgetViews[id]?.let { return it }
+        val info = widgetManager.getAppWidgetInfo(id) ?: return null
+        val v = widgetHost.createView(this, id, info) as PixelWidgetView
+        v.onLongPress = { showTodayWidgetMenu(it, id) }
+        v.onDragOut = {}
+        todayWidgetViews[id] = v
+        return v
+    }
+
+    private fun showTodayWidgetMenu(view: View, id: Int) {
+        fun edit(change: (MutableList<Triple<Int, String, Int>>, Int) -> Unit) {
+            val list = prefs.todayWidgets.toMutableList()
+            val i = list.indexOfFirst { it.first == id }
+            if (i < 0) return
+            change(list, i)
+            prefs.todayWidgets = list
+            renderToday()
+        }
+        menu.show(view, listOf(
+            PixelMenu.Entry("Move up") { edit { l, i -> if (i > 0) l.add(i - 1, l.removeAt(i)) } },
+            PixelMenu.Entry("Move down") { edit { l, i -> if (i < l.size - 1) l.add(i + 1, l.removeAt(i)) } },
+            PixelMenu.Entry("Taller") { edit { l, i -> l[i] = l[i].copy(third = (l[i].third + 40).coerceAtMost(600)) } },
+            PixelMenu.Entry("Shorter") { edit { l, i -> l[i] = l[i].copy(third = (l[i].third - 40).coerceAtLeast(60)) } },
+            PixelMenu.Entry("Remove") {
+                edit { l, i -> l.removeAt(i) }
+                widgetHost.deleteAppWidgetId(id)
+                todayWidgetViews.remove(id)
+            },
+        ))
+    }
 
     // ---------------------------------------------------------------- gestures
 
@@ -1609,6 +1780,16 @@ class LauncherActivity : Activity() {
 
     private fun placeWidget() {
         val info = pendingWidget ?: return
+        if (widgetForToday) {
+            widgetForToday = false
+            val (_, h) = defaultCells(info)
+            val hDp = ((h * cellSize().second) / resources.displayMetrics.density).toInt().coerceIn(80, 400)
+            prefs.todayWidgets = prefs.todayWidgets + Triple(pendingWidgetId, info.provider.flattenToString(), hDp)
+            pendingWidget = null
+            pendingWidgetId = -1
+            renderToday()
+            return
+        }
         val (w, h) = defaultCells(info)
         val item = WidgetItem(pendingWidgetId, info.provider.flattenToString(), 0, 0, w, h)
         val page = layout.placeAnywhere(item, workspace.currentPage)
@@ -1620,9 +1801,18 @@ class LauncherActivity : Activity() {
     }
 
     private fun cancelWidget() {
+        widgetForToday = false
         if (pendingWidgetId != -1) widgetHost.deleteAppWidgetId(pendingWidgetId)
         pendingWidget = null
         pendingWidgetId = -1
+    }
+
+    override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, grantResults: IntArray) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults)
+        if (requestCode == REQ_CALENDAR) {
+            if (grantResults.firstOrNull() != PackageManager.PERMISSION_GRANTED) Pixel.say(this, "Calendar stays hidden: bitlauncher wasn't allowed to read it.")
+            if (today.visibility == View.VISIBLE) renderToday()
+        }
     }
 
     @Deprecated("Deprecated in Java")
@@ -1651,5 +1841,6 @@ class LauncherActivity : Activity() {
         private const val REQ_BIND = 11
         private const val REQ_CONFIG = 12
         private const val REQ_ICON = 13
+        private const val REQ_CALENDAR = 14
     }
 }
