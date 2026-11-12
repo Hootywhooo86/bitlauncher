@@ -149,6 +149,10 @@ class Prefs(context: Context) {
         get() = sp.getLong("layoutChanged", 0L)
         set(v) = sp.edit().putLong("layoutChanged", v).apply()
 
+        /** When bitlauncher first ran: apps installed before this never count as "new". */
+    val firstSeen: Long
+        get() = sp.getLong("firstSeen", 0L).takeIf { it > 0 } ?: System.currentTimeMillis().also { sp.edit().putLong("firstSeen", it).apply() }
+
         /** App ids hidden from the drawer. */
     var hidden: Set<String>
         get() = sp.getStringSet("hidden", emptySet())!!.toSet()

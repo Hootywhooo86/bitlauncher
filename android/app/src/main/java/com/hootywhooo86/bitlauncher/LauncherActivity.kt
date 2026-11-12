@@ -77,6 +77,7 @@ class LauncherActivity : Activity() {
         super.onCreate(savedInstanceState)
         Pixel.load(this)
         prefs = Prefs(this)
+        prefs.firstSeen // the first run is remembered from now on
         appliedTheme = prefs.theme
         appliedPack = prefs.iconPack
         icons = IconCache(this)
@@ -119,6 +120,8 @@ class LauncherActivity : Activity() {
 
     override fun onStop() {
         super.onStop()
+        // Leaving home ends the chance to undo; removed widgets are deleted for real now.
+        if (::undoBar.isInitialized) dismissUndo()
         try {
             widgetHost.stopListening()
         } catch (e: Exception) {
@@ -326,6 +329,7 @@ class LauncherActivity : Activity() {
             positionChrome()
             insets
         }
+        buildUndoBar()
         root.setOnDragListener { _, e -> onDrag(e) }
         setContentView(root)
     }
@@ -563,6 +567,7 @@ class LauncherActivity : Activity() {
     ) {
         view.tagItem = key
         view.sprite = icons.get(key)
+        view.isNew = isNewApp(key)
         view.folderSprites = null
         view.hasDot = false
         view.label = apps.label(key)
@@ -631,10 +636,10 @@ class LauncherActivity : Activity() {
             saveAndRebuild()
         }
         entries += PixelMenu.Entry("Remove folder") {
-            layout.remove(folder)
-            layout.dock.indexOfFirst { it === folder }.takeIf { it >= 0 }?.let { layout.setDock(it, null) }
-            saveAndRebuild()
-            Pixel.say(this, "Folder removed. The apps are still in the app drawer.")
+            removing("${folder.name} removed. Its apps stay in the drawer") {
+                layout.remove(folder)
+                layout.dock.indexOfFirst { it === folder }.takeIf { it >= 0 }?.let { layout.setDock(it, null) }
+            }
         }
         menu.show(view, entries, view.iconRect())
     }
@@ -663,6 +668,16 @@ class LauncherActivity : Activity() {
             }
         }
         menu.show(view, entries, view.iconRect())
+    }
+
+    /**
+     * Installed in the last two days, after you started using bitlauncher, and not opened yet.
+     * (So installing bitlauncher doesn't make every app on the phone say NEW.)
+     */
+    private fun isNewApp(key: AppKey): Boolean {
+        if (PinnedShortcuts.isShortcut(key)) return false
+        val installed = apps.find(key)?.installedAt ?: return false
+        return newApp(installed, prefs.firstSeen, System.currentTimeMillis(), usage.count(key))
     }
 
     private fun saveAndRebuild() {
@@ -696,6 +711,91 @@ class LauncherActivity : Activity() {
         }
     }
 
+    // ---------------------------------------------------------------- undo
+
+    private lateinit var undoBar: android.widget.LinearLayout
+    private lateinit var undoText: TextView
+    private var undoSnapshot: String? = null
+    private var undoAfterDrag: String? = null
+    private var undoAfterDragText = ""
+    /** Widgets removed but not yet deleted: deleting one can't be undone, so it waits for the undo bar. */
+    private val widgetsToDelete = mutableListOf<Int>()
+    private val hideUndo = Runnable { dismissUndo() }
+
+    private fun buildUndoBar() {
+        undoText = Pixel.label(this, "", 10f, Pixel.INK)
+        undoBar = android.widget.LinearLayout(this).apply {
+            gravity = Gravity.CENTER_VERTICAL
+            background = PanelDrawable(context, Pixel.PANEL, prefs.accent)
+            val p = Pixel.dpi(context, 12)
+            setPadding(p + Pixel.dpi(context, 4), p / 2, p / 2, p / 2 + Pixel.dpi(context, 2))
+            visibility = View.GONE
+            isClickable = true
+            addView(undoText, android.widget.LinearLayout.LayoutParams(0, -2, 1f))
+            addView(Pixel.button(context, "UNDO", prefs.accent) { undo() })
+        }
+        root.addView(undoBar, FrameLayout.LayoutParams(-1, -2, Gravity.BOTTOM))
+    }
+
+    /** Make a removal undoable for five seconds. */
+    private fun removing(what: String, change: () -> Unit) {
+        commitWidgetDeletes()
+        val before = layout.toJson().toString()
+        change()
+        save()
+        rebuild()
+        showUndo(what, before)
+    }
+
+    private fun deleteWidgetLater(id: Int) {
+        widgetsToDelete += id
+        widgetViews.remove(id)
+    }
+
+    private fun commitWidgetDeletes() {
+        widgetsToDelete.forEach { widgetHost.deleteAppWidgetId(it) }
+        widgetsToDelete.clear()
+    }
+
+    private fun showUndo(what: String, snapshot: String) {
+        undoSnapshot = snapshot
+        undoText.text = what.uppercase()
+        val lp = undoBar.layoutParams as FrameLayout.LayoutParams
+        val gap = Pixel.dpi(this, 8)
+        lp.setMargins(gap, 0, gap, insetBottom + gap * 2 + dock.height)
+        undoBar.layoutParams = lp
+        undoBar.background = PanelDrawable(this, Pixel.PANEL, prefs.accent)
+        undoBar.visibility = View.VISIBLE
+        if (Pixel.motion(this)) {
+            undoBar.alpha = 0f
+            undoBar.translationY = Pixel.dp(this, 16f)
+            undoBar.animate().alpha(1f).translationY(0f).setDuration(200).setInterpolator(Ease.enter).start()
+        }
+        root.removeCallbacks(hideUndo)
+        root.postDelayed(hideUndo, 5000)
+    }
+
+    private fun dismissUndo() {
+        root.removeCallbacks(hideUndo)
+        undoSnapshot = null
+        commitWidgetDeletes()
+        if (undoBar.visibility != View.VISIBLE) return
+        if (Pixel.motion(this)) undoBar.animate().alpha(0f).setDuration(150).withEndAction { undoBar.visibility = View.GONE }.start()
+        else undoBar.visibility = View.GONE
+    }
+
+    /** Put the layout back exactly as it was before the removal. Widgets still exist, so they come back too. */
+    private fun undo() {
+        val snap = undoSnapshot ?: return
+        widgetsToDelete.clear()
+        undoSnapshot = null
+        layout = HomeLayout.fromJson(org.json.JSONObject(snap))
+        layout.resize(prefs.grid)
+        save()
+        rebuild()
+        dismissUndo()
+    }
+
     // ---------------------------------------------------------------- shift mode
 
     /** The first time Work is used, it starts as a copy of Home (without widgets: each layout owns its own). */
@@ -708,6 +808,7 @@ class LauncherActivity : Activity() {
     }
 
     private fun switchMode(newMode: String) {
+        if (::undoBar.isInitialized) dismissUndo() // an undo belongs to the layout it came from
         save()
         closeOverlays()
         mode = newMode
@@ -1364,14 +1465,10 @@ class LauncherActivity : Activity() {
         }
         when (source) {
             Source.HOME -> entries += PixelMenu.Entry("Remove from home") {
-                item?.let { layout.remove(it) }
-                save()
-                rebuild()
+                removing("${apps.label(key)} removed") { item?.let { layout.remove(it) } }
             }
             Source.DOCK -> entries += PixelMenu.Entry("Remove from dock") {
-                layout.dock[dockIndex] = null
-                save()
-                rebuild()
+                removing("${apps.label(key)} removed from the dock") { layout.dock[dockIndex] = null }
             }
             Source.FOLDER -> entries += if (folder?.cover == key && folder.style == "cover") PixelMenu.Entry("Stop using as cover") {
                 folder.cover = null
@@ -1386,10 +1483,8 @@ class LauncherActivity : Activity() {
         }
         if (source == Source.FOLDER) {
             entries += PixelMenu.Entry("Remove from folder") {
-                removeFromFolder(folder!!, key)
                 closeFolder()
-                save()
-                rebuild()
+                removing("${apps.label(key)} taken out of ${folder!!.name}") { removeFromFolder(folder, key) }
             }
         }
         entries += PixelMenu.Entry("Edit name & icon") { showEditMenu(view, key) }
@@ -1524,6 +1619,8 @@ class LauncherActivity : Activity() {
                 rebuild()
                 landed?.let { tag -> root.post { hopLanded(tag) } }
                 landed = null
+                undoAfterDrag?.let { showUndo(undoAfterDragText, it) }
+                undoAfterDrag = null
             }
         }
         return true
@@ -1611,11 +1708,16 @@ class LauncherActivity : Activity() {
         when (target) {
             DropTarget.None -> return false
             DropTarget.Remove -> {
-                removeFromSource(info)
-                (info.item as? WidgetItem)?.let {
-                    widgetHost.deleteAppWidgetId(it.widgetId)
-                    widgetViews.remove(it.widgetId)
+                // The undo bar shows once the drag has finished (see ACTION_DRAG_ENDED).
+                commitWidgetDeletes()
+                undoAfterDrag = layout.toJson().toString()
+                undoAfterDragText = when (val it = info.item) {
+                    is WidgetItem -> "Widget removed"
+                    is FolderItem -> "${it.name} removed"
+                    else -> info.singleApp()?.let { "${apps.label(it)} removed" } ?: "Removed"
                 }
+                removeFromSource(info)
+                (info.item as? WidgetItem)?.let { deleteWidgetLater(it.widgetId) }
                 return true
             }
             is DropTarget.Dock -> {
@@ -1724,10 +1826,10 @@ class LauncherActivity : Activity() {
                 background = PanelDrawable(context, withAlpha(Pixel.PANEL, 200), Pixel.MUTED)
                 setOnLongClickListener {
                     menu.show(this, listOf(PixelMenu.Entry("Remove") {
-                        this@LauncherActivity.layout.remove(item)
-                        widgetHost.deleteAppWidgetId(item.widgetId)
-                        save()
-                        rebuild()
+                        removing("Widget removed") {
+                            this@LauncherActivity.layout.remove(item)
+                            deleteWidgetLater(item.widgetId)
+                        }
                     }))
                     true
                 }
@@ -1746,11 +1848,10 @@ class LauncherActivity : Activity() {
         menu.show(view, listOf(
             PixelMenu.Entry("Resize  ${item.w}x${item.h}") { showResizeMenu(view, item) },
             PixelMenu.Entry("Remove") {
-                layout.remove(item)
-                widgetHost.deleteAppWidgetId(item.widgetId)
-                widgetViews.remove(item.widgetId)
-                save()
-                rebuild()
+                removing("Widget removed") {
+                    layout.remove(item)
+                    deleteWidgetLater(item.widgetId)
+                }
             },
         ))
     }

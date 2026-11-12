@@ -46,3 +46,10 @@ class Usage(context: Context) {
         const val MAX_RECENT = 8
     }
 }
+
+/**
+ * "NEW" on an icon: installed in the last two days, after bitlauncher's first run, and not yet
+ * opened from bitlauncher.
+ */
+fun newApp(installedAt: Long, firstSeen: Long, now: Long, timesOpened: Int): Boolean =
+    installedAt > firstSeen && now - installedAt < 2 * 24 * 3600_000L && timesOpened == 0

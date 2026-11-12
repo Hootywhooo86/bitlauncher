@@ -93,6 +93,10 @@ class AppIconView(context: Context) : View(context) {
     var iconSizeDp = 50
     var accent = Pixel.ACCENTS[0]
 
+    /** Just installed and not opened yet: a small NEW tag. */
+    var isNew = false
+        set(v) { if (field != v) { field = v; invalidate() } }
+
     /** A notification dot: something new in this app (or in this folder). */
     var hasDot = false
         set(v) { if (field != v) { field = v; invalidate() } }
@@ -235,6 +239,21 @@ class AppIconView(context: Context) : View(context) {
     }
 
     private fun drawExtras(canvas: Canvas, r: Rect) {
+        if (isNew) {
+            // "NEW" on a little accent tab across the top-left corner.
+            val p = r.width() / IconCache.SIZE.toFloat()
+            countPaint.textSize = p * 6
+            val w = countPaint.measureText("NEW") + p * 3
+            val h = p * 8
+            val l = r.left - p * 2
+            val t = r.top - p * 2
+            dotPaint.color = Pixel.SHADOW
+            canvas.drawRect(l, t, l + w, t + h, dotPaint)
+            dotPaint.color = accent
+            canvas.drawRect(l + p, t + p, l + w - p, t + h - p, dotPaint)
+            countPaint.color = Pixel.BG
+            canvas.drawText("NEW", l + p * 1.5f, t + h - p * 2f, countPaint)
+        }
         if (showCount && folderCount > 0) {
             // A little numbered tag on the bottom-left corner.
             val p = r.width() / IconCache.SIZE.toFloat()

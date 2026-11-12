@@ -14,7 +14,7 @@ import java.io.File
 import java.text.Collator
 import java.util.concurrent.Executors
 
-class AppEntry(val key: AppKey, val label: String)
+class AppEntry(val key: AppKey, val label: String, val installedAt: Long = 0L)
 
 /**
  * Every launchable app on the phone, across the personal and work profiles. Labels are cached on
@@ -92,7 +92,7 @@ class AppList(private val context: Context, val icons: IconCache, private val on
                 for (info in launcherApps.getActivityList(null, user)) {
                     val key = AppKey(info.componentName.packageName, info.componentName.className, serial)
                     val label = renamed[key.id()] ?: info.label.toString().trim()
-                    found.add(AppEntry(key, label) to info)
+                    found.add(AppEntry(key, label, info.firstInstallTime) to info)
                 }
             }
             val collator = Collator.getInstance()
