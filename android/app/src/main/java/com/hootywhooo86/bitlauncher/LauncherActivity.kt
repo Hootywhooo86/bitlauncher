@@ -1082,7 +1082,7 @@ class LauncherActivity : Activity() {
             Pixel.say(this, "None of your apps offer widgets.")
             return
         }
-        WidgetPicker(this, prefs.accent, providers, { defaultCells(it) }) { addWidget(it) }.show()
+        WidgetPicker(this, prefs.accent, providers, { defaultCells(it) }, cellSize(), icons) { addWidget(it) }.show()
     }
 
     private fun addWidget(info: AppWidgetProviderInfo) {

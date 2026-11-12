@@ -13,7 +13,7 @@ views: no UI toolkit, no libraries, no network. The release APK is about 85 KB.
 | **Search** | Ignores case and accents; names that start with what you typed come first. Optional: keyboard opens with the drawer. |
 | **Long-press an app** | The app's own shortcuts (when bitlauncher is your home app), Add to home, Remove, Hide, App info, Uninstall. Keep holding and move to drag. |
 | **Folders** | Drop one app on another. Tap the name to rename. A folder with one app left turns back into that app. |
-| **Widgets** | Long-press empty space → Widgets. Long-press a widget to resize (step by step) or remove; hold and move to drag. |
+| **Widgets** | Long-press empty space → Widgets: every widget shown as a preview at its real proportions (Android 15's live preview, the app's preview layout, or its preview image), with the cells it takes. Long-press a widget to resize (step by step) or remove; hold and move to drag. |
 | **Wallpaper** | Uses the phone's wallpaper. Long-press empty space → Wallpaper. |
 | **Gestures** | Swipe up: drawer. Swipe down: notifications. Home button: closes whatever is open, then back to page one. |
 | **Settings** | Grid, icon size, labels, accent colour (free), hidden apps, backup and restore, set as home app. |
