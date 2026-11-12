@@ -5,9 +5,9 @@ door: a pixel launcher where every 128bit app lives — chunky app grid,
 live widgets, quests and XP on the first screen you see. Part of the
 128bit family.
 
-> Product direction is Daniel's call — this README is a starter brief so
-> Carlos (Claude Code) has something concrete to react to. The landing page
-> is live; the app itself is unstarted.
+> **Status:** v0.1 of the Android launcher lives in [`android/`](android/README.md):
+> a lean, native pixel home screen (grid in 4x5, 5x6 or 6x7, dock, drawer with
+> search, folders, widgets, gestures, backup). The family features below come next.
 
 ## Concept (starter — Daniel decides)
 
