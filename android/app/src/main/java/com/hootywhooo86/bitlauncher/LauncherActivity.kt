@@ -427,13 +427,15 @@ class LauncherActivity : Activity() {
 
         dock.removeAllViews()
         dock.slots = layout.grid.dockSlots
-        layout.dock.forEachIndexed { slot, key ->
-            if (key != null) {
-                val view = AppIconView(this)
-                bindIcon(view, key, Source.DOCK, dockIndex = slot)
-                view.showLabel = false
-                dock.addView(view, CellParams(slot, 0))
+        layout.dock.forEachIndexed { slot, item ->
+            val view = AppIconView(this)
+            when (item) {
+                is AppItem -> bindIcon(view, item.app, Source.DOCK, item, dockIndex = slot)
+                is FolderItem -> bindFolder(view, item, -1, Source.DOCK, slot)
+                else -> return@forEachIndexed
             }
+            view.showLabel = false
+            dock.addView(view, CellParams(slot, 0))
         }
 
         dots.accent = accent
@@ -523,15 +525,15 @@ class LauncherActivity : Activity() {
             if (slot >= layout.dock.size) break
             val pkg = packageManager.resolveActivity(intent, PackageManager.MATCH_DEFAULT_ONLY)?.activityInfo?.packageName ?: continue
             val entry = apps.apps.firstOrNull { it.key.pkg == pkg && it.key.user == me } ?: continue
-            if (layout.dock.contains(entry.key)) continue
-            layout.dock[slot++] = entry.key
+            if (layout.dock.any { (it as? AppItem)?.app == entry.key }) continue
+            layout.setDock(slot++, AppItem(entry.key, 0, 0))
         }
     }
 
-    private enum class Source { HOME, DOCK, DRAWER, FOLDER }
+    internal enum class Source { HOME, DOCK, DRAWER, FOLDER }
 
     /** What's being dragged, and where it came from. */
-    private class DragInfo(
+    internal class DragInfo(
         val source: Source,
         val app: AppKey? = null,
         val item: Item? = null,
@@ -573,7 +575,7 @@ class LauncherActivity : Activity() {
         view.invalidate()
     }
 
-    private fun bindFolder(view: AppIconView, folder: FolderItem, pageIndex: Int) {
+    private fun bindFolder(view: AppIconView, folder: FolderItem, pageIndex: Int, source: Source = Source.HOME, dockIndex: Int = -1) {
         view.tagItem = folder
         view.sprite = null
         view.folderSprites = folder.apps.take(4).map { icons.get(it) }
@@ -587,7 +589,7 @@ class LauncherActivity : Activity() {
             showFolderMenu(view, folder)
             true
         }
-        view.onDragOut = { startDrag(it, DragInfo(Source.HOME, item = folder, view = it)) }
+        view.onDragOut = { startDrag(it, DragInfo(source, item = folder, dockIndex = dockIndex, view = it)) }
     }
 
     private fun showFolderMenu(view: AppIconView, folder: FolderItem) {
@@ -617,6 +619,7 @@ class LauncherActivity : Activity() {
         }
         entries += PixelMenu.Entry("Remove folder") {
             layout.remove(folder)
+            layout.dock.indexOfFirst { it === folder }.takeIf { it >= 0 }?.let { layout.setDock(it, null) }
             saveAndRebuild()
             Pixel.say(this, "Folder removed. The apps are still in the app drawer.")
         }
@@ -1217,21 +1220,33 @@ class LauncherActivity : Activity() {
     private fun openFolder(folder: FolderItem) {
         openFolder = folder
         folderView.title.setText(folder.name)
-        fillFolder(folder, dragging = null)
+        fillFolder(folder)
         folderView.visibility = View.VISIBLE
         if (Pixel.motion(this)) folderView.popIn()
     }
 
     /** (Re)lay the open folder's icons, dimming the one being dragged around inside it. */
-    private fun fillFolder(folder: FolderItem, dragging: AppKey?) {
+    private fun fillFolder(folder: FolderItem) {
         val cell = Pixel.dpi(this, prefs.iconDp() + if (folder.labels) 40 else 20)
         folderView.setAccent(prefs.accent, folder.color)
-        folderView.setIcons(folder.apps.map { key ->
-            AppIconView(this).also {
-                bindIcon(it, key, Source.FOLDER, folder = folder)
-                if (key == dragging) it.alpha = 0.25f
+        folderView.setIcons(folder.apps.map { key -> AppIconView(this).also { bindIcon(it, key, Source.FOLDER, folder = folder) } }, cell)
+        // Dragged to a new spot inside: that's the folder's order now (and its cover, if the first four changed).
+        folderView.onReordered = { icons ->
+            val order = icons.mapNotNull { it.tagItem as? AppKey }
+            if (order != folder.apps && order.size == folder.apps.size) {
+                folder.apps.clear()
+                folder.apps.addAll(order)
+                saveAndRebuild()
             }
-        }, cell)
+        }
+        folderView.onDragStart = { menu.dismiss() }
+        // Dragged out past the edge: the folder closes and the same drag carries on to home or the dock.
+        folderView.onDragLeave = { v ->
+            val key = v.tagItem as? AppKey
+            menu.dismiss()
+            closeFolder()
+            if (key != null) startDrag(v, DragInfo(Source.FOLDER, key, null, folder, -1, v))
+        }
         refreshFolderDots(folder)
     }
 
@@ -1397,7 +1412,7 @@ class LauncherActivity : Activity() {
 
     private fun removeFromFolder(folder: FolderItem, key: AppKey) {
         folder.apps.remove(key)
-        layout.pages.firstOrNull { it.contains(folder) }?.let { layout.dissolveSmallFolders(it) }
+        layout.dissolveIfSmall(folder)
     }
 
     // ---------------------------------------------------------------- drag and drop
@@ -1407,7 +1422,7 @@ class LauncherActivity : Activity() {
     private val pageFlip = Runnable { flipPageDuringDrag() }
     private var flipDirection = 0
 
-    private sealed class DropTarget {
+    internal sealed class DropTarget {
         object None : DropTarget()
         object Remove : DropTarget()
         class Dock(val slot: Int) : DropTarget()
@@ -1420,11 +1435,6 @@ class LauncherActivity : Activity() {
         if (info.source == Source.DRAWER) {
             // Hide at once: the search box would otherwise take the drop as text mid-animation.
             hideDrawerNow()
-        }
-        if (info.source == Source.FOLDER) {
-            // The folder stays open: drag inside it to re-order, or out of it to place elsewhere.
-            folderView.hideKeyboard()
-            view.alpha = 0.25f
         }
         val started = view.startDragAndDrop(null, shadow, info, View.DRAG_FLAG_OPAQUE)
         if (!started) return
@@ -1440,7 +1450,6 @@ class LauncherActivity : Activity() {
         when (e.action) {
             DragEvent.ACTION_DRAG_STARTED -> return true
             DragEvent.ACTION_DRAG_LOCATION -> {
-                if (reorderInFolder(info, e.x, e.y)) return true
                 dragTarget = targetAt(e.x, e.y, info)
                 showTarget(dragTarget, info)
                 val edge = Pixel.dp(this, 24f)
@@ -1456,8 +1465,6 @@ class LauncherActivity : Activity() {
                 }
             }
             DragEvent.ACTION_DROP -> {
-                // Let go inside the open folder: the re-order already happened as it moved.
-                if (info.source == Source.FOLDER && openFolder != null && folderView.panelContains(e.x, e.y)) return true
                 landed = null
                 val ok = drop(info, targetAt(e.x, e.y, info))
                 if (ok && landed == null) landed = (info.item as? FolderItem) ?: info.singleApp()
@@ -1472,37 +1479,9 @@ class LauncherActivity : Activity() {
                 layout.trimEmptyPages()
                 save()
                 rebuild()
-                // Still inside the folder: show it in its new order, nothing dimmed.
-                openFolder?.let { fillFolder(it, dragging = null) }
                 landed?.let { tag -> root.post { hopLanded(tag) } }
                 landed = null
             }
-        }
-        return true
-    }
-
-    /**
-     * Dragging an app from an open folder. Over the panel, it re-orders live: the other apps
-     * glide out of the way. Out past the panel, the folder closes and it's a normal drag.
-     * Returns true while the folder is handling it.
-     */
-    private fun reorderInFolder(info: DragInfo, x: Float, y: Float): Boolean {
-        val folder = openFolder ?: return false
-        if (info.source != Source.FOLDER || info.folder !== folder) return false
-        val app = info.app ?: return false
-        if (!folderView.panelContains(x, y)) {
-            removeBar.visibility = View.VISIBLE
-            closeFolder()
-            return false
-        }
-        removeBar.visibility = View.GONE
-        val to = folderView.indexAt(x, y)
-        val from = folder.apps.indexOf(app)
-        if (from >= 0 && to != from) {
-            val before = folderView.positions()
-            folder.move(from, to)
-            fillFolder(folder, dragging = app)
-            folderView.glideFrom(before)
         }
         return true
     }
@@ -1585,7 +1564,7 @@ class LauncherActivity : Activity() {
         }
     }
 
-    private fun drop(info: DragInfo, target: DropTarget): Boolean {
+    internal fun drop(info: DragInfo, target: DropTarget): Boolean {
         when (target) {
             DropTarget.None -> return false
             DropTarget.Remove -> {
@@ -1597,29 +1576,52 @@ class LauncherActivity : Activity() {
                 return true
             }
             is DropTarget.Dock -> {
-                val app = info.singleApp() ?: run {
-                    Pixel.say(this, "Only apps fit in the dock.")
+                val slot = target.slot
+                val occupant = layout.dock.getOrNull(slot)
+                val draggedFolder = info.item as? FolderItem
+                val app = info.singleApp()
+                if (draggedFolder == null && app == null) {
+                    Pixel.say(this, "Only apps and folders fit in the dock.")
                     return false
                 }
-                val occupant = layout.dock.getOrNull(target.slot)
+                // What goes in the slot: the same item if it was already one (keeps its settings).
+                val piece: Item = draggedFolder ?: (info.item as? AppItem) ?: AppItem(app!!, slot, 0)
                 when {
+                    occupant === piece -> return false // dropped back where it was
                     occupant == null -> {
                         removeFromSource(info)
-                        layout.dock[target.slot] = app
+                        layout.setDock(slot, piece)
                     }
+                    // Re-arranging the dock: the two swap.
                     info.source == Source.DOCK -> {
-                        layout.dock[info.dockIndex] = occupant
-                        layout.dock[target.slot] = app
+                        layout.setDock(info.dockIndex, occupant)
+                        layout.setDock(slot, piece)
                     }
-                    info.source == Source.HOME && info.item is AppItem -> {
-                        val home = info.item
-                        val page = layout.pages.first { it.contains(home) }
-                        page.remove(home)
-                        page.add(AppItem(occupant, home.x, home.y))
-                        layout.dock[target.slot] = app
+                    // From a folder onto a dock app: they trade places.
+                    info.source == Source.FOLDER && occupant is AppItem && app != null && info.folder != null -> {
+                        val folder = info.folder
+                        val at = folder.apps.indexOf(app)
+                        if (at < 0) return false
+                        folder.apps[at] = occupant.app
+                        layout.setDock(slot, AppItem(app, slot, 0))
+                    }
+                    // An app onto a dock app: a new folder, right there in the dock.
+                    occupant is AppItem && app != null -> {
+                        if (occupant.app == app) return false
+                        removeFromSource(info)
+                        val made = FolderItem("Folder", mutableListOf(occupant.app, app), slot, 0)
+                        layout.setDock(slot, made)
+                        landed = made
+                    }
+                    // An app onto a dock folder: in it goes.
+                    occupant is FolderItem && app != null -> {
+                        if (occupant === info.folder || occupant.apps.contains(app)) return false
+                        removeFromSource(info)
+                        occupant.apps.add(app)
+                        landed = occupant
                     }
                     else -> {
-                        Pixel.say(this, "That dock spot is taken. Drag that app out first.")
+                        Pixel.say(this, "That dock spot is taken. Move what's there first.")
                         return false
                     }
                 }

@@ -91,9 +91,10 @@ class WidgetItem(
 
 /**
  * Everything on the home screen: pages of items on a grid, plus the dock.
+ * The dock holds apps or folders ([AppItem] / [FolderItem]); an item's x is its dock slot.
  * All placement rules live here so they can be tested off-device.
  */
-class HomeLayout(var grid: GridSize, val pages: MutableList<MutableList<Item>>, val dock: MutableList<AppKey?>) {
+class HomeLayout(var grid: GridSize, val pages: MutableList<MutableList<Item>>, val dock: MutableList<Item?>) {
     /** Pages (by index) whose icons show no labels. */
     val unlabelledPages: MutableSet<Int> = mutableSetOf()
 
@@ -163,7 +164,13 @@ class HomeLayout(var grid: GridSize, val pages: MutableList<MutableList<Item>>, 
                 is WidgetItem -> {}
             }
         }
-        dock.filterNotNull().forEach { out.add(it) }
+        dock.filterNotNull().forEach {
+            when (it) {
+                is AppItem -> out.add(it.app)
+                is FolderItem -> out.addAll(it.apps)
+                is WidgetItem -> {}
+            }
+        }
         return out
     }
 
@@ -177,7 +184,41 @@ class HomeLayout(var grid: GridSize, val pages: MutableList<MutableList<Item>>, 
             }
             dissolveSmallFolders(page)
         }
-        for (i in dock.indices) if (dock[i]?.let(gone) == true) dock[i] = null
+        for (i in dock.indices) {
+            when (val d = dock[i]) {
+                is AppItem -> if (gone(d.app)) dock[i] = null
+                is FolderItem -> {
+                    d.apps.removeAll(gone)
+                    if (d.cover?.let(gone) == true) d.cover = null
+                }
+                else -> {}
+            }
+        }
+        dissolveDockFolders()
+    }
+
+    /** The app in a dock slot, if it holds a single app. */
+    fun dockApp(slot: Int): AppKey? = (dock.getOrNull(slot) as? AppItem)?.app
+
+    /** Put [item] in a dock slot (an app or a folder), noting the slot on it. */
+    fun setDock(slot: Int, item: Item?) {
+        item?.x = slot
+        item?.y = 0
+        dock[slot] = item
+    }
+
+    /** A dock folder down to one app becomes that app; an empty one goes away. */
+    fun dissolveDockFolders() {
+        for (i in dock.indices) {
+            val f = dock[i] as? FolderItem ?: continue
+            if (f.apps.size <= 1) setDock(i, f.apps.firstOrNull()?.let { AppItem(it, i, 0) })
+        }
+    }
+
+    /** Wherever this folder lives (a page or the dock), fold it away if it's down to one app. */
+    fun dissolveIfSmall(folder: FolderItem) {
+        pages.firstOrNull { it.contains(folder) }?.let { dissolveSmallFolders(it) }
+        if (dock.contains(folder)) dissolveDockFolders()
     }
 
     /** A folder with one app left becomes that app; an empty folder goes away. */
@@ -219,10 +260,11 @@ class HomeLayout(var grid: GridSize, val pages: MutableList<MutableList<Item>>, 
         val slots = grid.dockSlots
         while (dock.size < slots) dock.add(null)
         while (dock.size > slots) {
-            val app = dock.removeAt(dock.size - 1) ?: continue
+            val item = dock.removeAt(dock.size - 1) ?: continue
             val empty = dock.indexOfFirst { it == null }
-            if (empty >= 0) dock[empty] = app else placeAnywhere(AppItem(app, 0, 0))
+            if (empty >= 0) setDock(empty, item) else placeAnywhere(item)
         }
+        dock.forEachIndexed { i, item -> item?.x = i; item?.y = 0 }
     }
 
     private fun clampSpan(item: Item) {
@@ -255,9 +297,19 @@ class HomeLayout(var grid: GridSize, val pages: MutableList<MutableList<Item>>, 
                 for (j in 0 until items.length()) itemFromJson(items.getJSONObject(j))?.let(page::add)
                 pages.add(page)
             }
-            val dock = mutableListOf<AppKey?>()
+            val dock = mutableListOf<Item?>()
             val da = o.optJSONArray("dock") ?: JSONArray()
-            for (i in 0 until da.length()) dock.add(da.optJSONObject(i)?.let(AppKey::fromJson))
+            for (i in 0 until da.length()) {
+                val d = da.optJSONObject(i)
+                // Layouts from before folders could go in the dock saved bare apps there.
+                dock.add(
+                    when {
+                        d == null -> null
+                        d.has("t") -> itemFromJson(d)?.takeIf { it !is WidgetItem }
+                        else -> AppItem(AppKey.fromJson(d), i, 0)
+                    },
+                )
+            }
             return HomeLayout(grid, pages, dock).also { l ->
                 o.optJSONArray("unlabelledPages")?.let { a -> for (i in 0 until a.length()) l.unlabelledPages.add(a.getInt(i)) }
             }

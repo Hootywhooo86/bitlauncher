@@ -41,6 +41,23 @@ class AppIconView(context: Context) : View(context) {
     /** Called when, after a long press, the finger moves: time to start dragging. */
     var onDragOut: ((AppIconView) -> Unit)? = null
 
+    /**
+     * Inside an open folder: return true to keep this drag in the folder. The icon then passes
+     * every finger position (screen coordinates) to [onHoldMove] until the finger lifts.
+     */
+    var onHoldDrag: ((AppIconView) -> Boolean)? = null
+    var onHoldMove: ((rawX: Float, rawY: Float) -> Unit)? = null
+    var onHoldEnd: ((rawX: Float, rawY: Float, cancelled: Boolean) -> Unit)? = null
+    private var holding = false
+
+    /** Picked up: draw a hard pixel shadow under it, as if it's floating. */
+    var lifted = false
+        set(v) { if (field != v) { field = v; invalidate() } }
+    private val liftPaint = Paint().apply {
+        isFilterBitmap = false
+        colorFilter = android.graphics.PorterDuffColorFilter(withAlpha(Pixel.SHADOW, 150), android.graphics.PorterDuff.Mode.SRC_IN)
+    }
+
     private val spritePaint = Paint().apply { isFilterBitmap = false; isAntiAlias = false }
     private val textPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         typeface = Pixel.font(context)
@@ -139,6 +156,13 @@ class AppIconView(context: Context) : View(context) {
             val bmp = sprite
             if (bmp != null) {
                 src.set(0, 0, bmp.width, bmp.height)
+                if (lifted) {
+                    // The sprite's own silhouette, three sprite-pixels down and right.
+                    val off = r.width() / IconCache.SIZE * 3f
+                    dst.offset(off, off)
+                    canvas.drawBitmap(bmp, src, dst, liftPaint)
+                    dst.offset(-off, -off)
+                }
                 canvas.drawBitmap(bmp, src, dst, spritePaint)
             } else {
                 // Sprite still being made: a quiet block, never a fake icon.
@@ -185,7 +209,23 @@ class AppIconView(context: Context) : View(context) {
         return super.performLongClick()
     }
 
+    /** The folder (or anything holding this drag) let go of it, e.g. to hand it to the home screen. */
+    fun stopHolding() {
+        holding = false
+    }
+
     override fun onTouchEvent(event: MotionEvent): Boolean {
+        if (holding) {
+            when (event.actionMasked) {
+                MotionEvent.ACTION_MOVE -> onHoldMove?.invoke(event.rawX, event.rawY)
+                MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
+                    holding = false
+                    isPressed = false
+                    onHoldEnd?.invoke(event.rawX, event.rawY, event.actionMasked == MotionEvent.ACTION_CANCEL)
+                }
+            }
+            return true
+        }
         when (event.actionMasked) {
             MotionEvent.ACTION_DOWN -> {
                 downX = event.x
@@ -195,7 +235,13 @@ class AppIconView(context: Context) : View(context) {
             MotionEvent.ACTION_MOVE -> if (longPressed && (abs(event.x - downX) > slop || abs(event.y - downY) > slop)) {
                 longPressed = false
                 cancelLongPress()
-                onDragOut?.invoke(this)
+                if (onHoldDrag?.invoke(this) == true) {
+                    holding = true
+                    isPressed = false
+                    onHoldMove?.invoke(event.rawX, event.rawY)
+                } else {
+                    onDragOut?.invoke(this)
+                }
                 return true
             }
             MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {

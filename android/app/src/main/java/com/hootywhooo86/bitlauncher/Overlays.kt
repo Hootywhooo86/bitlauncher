@@ -78,7 +78,7 @@ class DrawerView(context: Context, private val bind: (AppIconView, AppEntry) -> 
         setBackgroundColor(withAlpha(Pixel.BG, 242))
         isClickable = true // don't let taps fall through to home
         val column = LinearLayout(context).apply { orientation = LinearLayout.VERTICAL }
-        search = EditText(context).apply {
+        search = NoDropEditText(context).apply {
             hint = "SEARCH APPS"
             typeface = Pixel.font(context)
             textSize = 13f
@@ -275,17 +275,114 @@ class DrawerView(context: Context, private val bind: (AppIconView, AppEntry) -> 
     }
 }
 
+/** A text field that never accepts drag-and-drop (an app dragged over it isn't text). */
+class NoDropEditText(context: Context) : EditText(context) {
+    override fun onDragEvent(event: android.view.DragEvent?): Boolean = false
+}
+
+/**
+ * The apps in an open folder, in slots. Each icon stays attached the whole time (so a finger
+ * holding one never loses it); re-ordering only changes which slot each is drawn in, and the
+ * icons glide between slots.
+ */
+class FolderGrid(context: Context) : ViewGroup(context) {
+    var columns = 4
+    var cellHeight = Pixel.dpi(context, 90)
+    /** Children in slot order: order[0] is spot 1. */
+    val order = mutableListOf<View>()
+
+    fun cellWidth() = (width - paddingLeft - paddingRight) / columns.toFloat()
+
+    fun slotLeft(slot: Int) = paddingLeft + (slot % columns) * cellWidth()
+    fun slotTop(slot: Int) = paddingTop + (slot / columns) * cellHeight.toFloat()
+
+    /** The slot nearest a point in this view's coordinates. */
+    fun slotAt(x: Float, y: Float): Int {
+        val col = ((x - paddingLeft) / cellWidth()).toInt().coerceIn(0, columns - 1)
+        val row = ((y - paddingTop) / cellHeight).toInt().coerceAtLeast(0)
+        return (row * columns + col).coerceIn(0, (order.size - 1).coerceAtLeast(0))
+    }
+
+    override fun onMeasure(widthMeasureSpec: Int, heightMeasureSpec: Int) {
+        val w = MeasureSpec.getSize(widthMeasureSpec)
+        val rows = (order.size + columns - 1) / columns
+        setMeasuredDimension(w, paddingTop + paddingBottom + rows * cellHeight)
+        val cw = MeasureSpec.makeMeasureSpec(((w - paddingLeft - paddingRight) / columns), MeasureSpec.EXACTLY)
+        val ch = MeasureSpec.makeMeasureSpec(cellHeight, MeasureSpec.EXACTLY)
+        for (i in 0 until childCount) getChildAt(i).measure(cw, ch)
+    }
+
+    override fun onLayout(changed: Boolean, l: Int, t: Int, r: Int, b: Int) {
+        order.forEachIndexed { slot, v ->
+            val left = slotLeft(slot).toInt()
+            val top = slotTop(slot).toInt()
+            v.layout(left, top, left + v.measuredWidth, top + v.measuredHeight)
+        }
+    }
+
+    /**
+     * Move [v] to [slot]; everything between shifts along one. Each icon that changes slot is
+     * re-laid there but drawn from where it was, then glides home. [except] is left alone
+     * (the one under the finger, which follows the finger instead).
+     */
+    fun moveTo(v: View, slot: Int, except: View?) {
+        val from = order.indexOf(v)
+        if (from < 0 || from == slot) return
+        val before = order.associateWith { it.left to it.top }
+        order.removeAt(from)
+        order.add(slot.coerceIn(0, order.size), v)
+        order.forEachIndexed { i, child ->
+            val left = slotLeft(i).toInt()
+            val top = slotTop(i).toInt()
+            val (oldL, oldT) = before.getValue(child)
+            if (oldL == left && oldT == top) return@forEachIndexed
+            child.layout(left, top, left + child.measuredWidth, top + child.measuredHeight)
+            if (child === except) {
+                // Keep it exactly under the finger: shift its offset by how far its slot moved.
+                child.translationX += (oldL - left)
+                child.translationY += (oldT - top)
+                return@forEachIndexed
+            }
+            child.animate().cancel()
+            child.translationX += (oldL - left)
+            child.translationY += (oldT - top)
+            if (Pixel.motion(context)) {
+                child.animate().translationX(0f).translationY(0f).setDuration(200).setInterpolator(Ease.move).start()
+            } else {
+                child.translationX = 0f
+                child.translationY = 0f
+            }
+        }
+    }
+
+    override fun checkLayoutParams(p: LayoutParams?) = true
+    override fun generateDefaultLayoutParams(): LayoutParams = LayoutParams(LayoutParams.WRAP_CONTENT, LayoutParams.WRAP_CONTENT)
+}
+
 /**
  * An open folder: a panel with an editable name and its apps. Tap outside to close.
- * Big folders scroll; apps can be dragged around inside it (see [indexAt]).
+ * Hold an app and move to drag it to another spot; past the panel's edge it leaves the folder.
  */
 class FolderView(context: Context) : FrameLayout(context) {
     val title: EditText
-    val grid: LinearLayout
+    val grid: FolderGrid
     private val panel: LinearLayout
     private val scroll: android.widget.ScrollView
     var onClose: (() -> Unit)? = null
-    private var columns = 4
+
+    /** The new order, as icons (their tags say which app), when a drag inside ends. */
+    var onReordered: ((List<AppIconView>) -> Unit)? = null
+
+    /** A drag inside just started (close anything in the way, like the long-press menu). */
+    var onDragStart: (() -> Unit)? = null
+
+    /** The dragged app went past the panel's edge: hand it to the home screen (or dock). */
+    var onDragLeave: ((AppIconView) -> Unit)? = null
+
+    private var dragging: AppIconView? = null
+    private var startOrder: List<View> = emptyList()
+    private var grabX = 0f // where on the icon the finger is, so it doesn't jump
+    private var grabY = 0f
 
     init {
         setBackgroundColor(withAlpha(Pixel.BG, 170))
@@ -296,8 +393,10 @@ class FolderView(context: Context) : FrameLayout(context) {
             val p = Pixel.dpi(context, 16)
             setPadding(p, p, p, p)
             isClickable = true // taps on the panel don't close it
+            clipChildren = false
+            clipToPadding = false
         }
-        title = EditText(context).apply {
+        title = NoDropEditText(context).apply {
             typeface = Pixel.font(context)
             textSize = 14f
             setTextColor(Pixel.INK)
@@ -308,7 +407,7 @@ class FolderView(context: Context) : FrameLayout(context) {
             setSelectAllOnFocus(true)
         }
         panel.addView(title)
-        grid = LinearLayout(context).apply { orientation = LinearLayout.VERTICAL }
+        grid = FolderGrid(context).apply { clipChildren = false }
         scroll = object : android.widget.ScrollView(context) {
             // Never taller than 70% of the screen; a big folder scrolls instead.
             override fun onMeasure(widthMeasureSpec: Int, heightMeasureSpec: Int) {
@@ -318,6 +417,7 @@ class FolderView(context: Context) : FrameLayout(context) {
         }.apply {
             isVerticalScrollBarEnabled = false
             overScrollMode = View.OVER_SCROLL_NEVER
+            clipChildren = false
             addView(grid)
         }
         panel.addView(scroll)
@@ -328,17 +428,22 @@ class FolderView(context: Context) : FrameLayout(context) {
         panel.background = PanelDrawable(context, if (tint != null) blend(Pixel.PANEL, tint, 0.18f) else Pixel.PANEL, tint ?: accent)
     }
 
-    /** Lay [icons] out in rows: four across, five once the folder is big. */
-    fun setIcons(icons: List<View>, cellHeight: Int) {
-        columns = if (icons.size > 16) 5 else 4
-        (panel.layoutParams as LayoutParams).width = Pixel.dpi(context, if (columns == 5) 360 else 300)
+    /** Lay [icons] out in slots: four across, five once the folder is big. */
+    fun setIcons(icons: List<AppIconView>, cellHeight: Int) {
+        dragging = null
+        grid.columns = if (icons.size > 16) 5 else 4
+        grid.cellHeight = cellHeight
+        (panel.layoutParams as LayoutParams).width = Pixel.dpi(context, if (grid.columns == 5) 360 else 300)
         grid.removeAllViews()
-        icons.chunked(columns).forEach { rowIcons ->
-            val row = LinearLayout(context)
-            rowIcons.forEach { row.addView(it, LinearLayout.LayoutParams(0, cellHeight, 1f)) }
-            repeat(columns - rowIcons.size) { row.addView(View(context), LinearLayout.LayoutParams(0, cellHeight, 1f)) }
-            grid.addView(row)
+        grid.order.clear()
+        for (icon in icons) {
+            grid.addView(icon)
+            grid.order.add(icon)
+            icon.onHoldDrag = { v -> beginDrag(v); true }
+            icon.onHoldMove = { x, y -> dragTo(v = icon, rawX = x, rawY = y) }
+            icon.onHoldEnd = { _, _, _ -> endDrag() }
         }
+        grid.requestLayout()
         panel.requestLayout()
     }
 
@@ -346,53 +451,81 @@ class FolderView(context: Context) : FrameLayout(context) {
     fun panelContains(x: Float, y: Float): Boolean =
         x >= panel.left && x <= panel.right && y >= panel.top && y <= panel.bottom
 
-    /**
-     * The slot nearest a point (in this view's coordinates), for dragging apps around inside.
-     * Near the top or bottom edge of a long folder it also scrolls.
-     */
-    fun indexAt(x: Float, y: Float): Int {
-        val icons = icons()
-        if (icons.isEmpty()) return 0
-        val edge = Pixel.dp(context, 40f)
-        val scrollTop = panel.top + scroll.top
-        if (y < scrollTop + edge) scroll.smoothScrollBy(0, -Pixel.dpi(context, 24))
-        else if (y > scrollTop + scroll.height - edge) scroll.smoothScrollBy(0, Pixel.dpi(context, 24))
+    /** Pick the icon up: it lifts a little, with a hard pixel shadow, and follows the finger. */
+    private fun beginDrag(v: AppIconView) {
+        dragging = v
+        onDragStart?.invoke()
+        startOrder = grid.order.toList()
+        grabX = -1f
+        v.animate().cancel()
+        v.translationZ = Pixel.dp(context, 8f)
+        if (Pixel.motion(context)) v.animate().scaleX(1.15f).scaleY(1.15f).setDuration(120).setInterpolator(Ease.enter).start()
+        else { v.scaleX = 1.15f; v.scaleY = 1.15f }
+        v.lifted = true
+    }
+
+    private fun dragTo(v: AppIconView, rawX: Float, rawY: Float) {
+        if (dragging !== v) return
         val me = IntArray(2)
-        getLocationInWindow(me)
-        val loc = IntArray(2)
-        return icons.indices.minBy { i ->
-            val v = icons[i]
-            v.getLocationInWindow(loc)
-            val cx = loc[0] - me[0] + v.width / 2f
-            val cy = loc[1] - me[1] + v.height / 2f
-            (cx - x) * (cx - x) + (cy - y) * (cy - y)
+        getLocationOnScreen(me)
+        val x = rawX - me[0]
+        val y = rawY - me[1]
+        if (!panelContains(x, y)) {
+            // Out of the folder: undo the shuffling it did on the way out (it's leaving, not
+            // moving), and let the home screen take the drag.
+            settle(v, animate = false)
+            dragging = null
+            v.stopHolding()
+            grid.order.clear()
+            grid.order.addAll(startOrder)
+            for (child in startOrder) { child.animate().cancel(); child.translationX = 0f; child.translationY = 0f }
+            grid.requestLayout()
+            onDragLeave?.invoke(v)
+            return
+        }
+        val g = IntArray(2)
+        grid.getLocationOnScreen(g)
+        val gx = rawX - g[0]
+        val gy = rawY - g[1]
+        if (grabX < 0f) {
+            // First move: remember where the finger holds the icon.
+            grabX = gx - (v.left + v.translationX)
+            grabY = gy - (v.top + v.translationY)
+        }
+        v.translationX = gx - grabX - v.left
+        v.translationY = gy - grabY - v.top
+        // Near the top or bottom of a long folder, scroll it.
+        val sy = rawY - IntArray(2).also { scroll.getLocationOnScreen(it) }[1]
+        val edge = Pixel.dp(context, 36f)
+        if (sy < edge) scroll.scrollBy(0, -Pixel.dpi(context, 8)) else if (sy > scroll.height - edge) scroll.scrollBy(0, Pixel.dpi(context, 8))
+        grid.moveTo(v, grid.slotAt(gx, gy), except = v)
+    }
+
+    private fun endDrag() {
+        val v = dragging ?: return
+        dragging = null
+        settle(v, animate = true)
+        onReordered?.invoke(grid.order.filterIsInstance<AppIconView>())
+    }
+
+    /** Drop the lifted icon into its slot. */
+    private fun settle(v: AppIconView, animate: Boolean) {
+        v.lifted = false
+        if (animate && Pixel.motion(context)) {
+            v.animate().translationX(0f).translationY(0f).scaleX(1f).scaleY(1f).setDuration(220)
+                .setInterpolator(android.view.animation.OvershootInterpolator(1.4f))
+                .withEndAction { v.translationZ = 0f }.start()
+        } else {
+            v.animate().cancel()
+            v.translationX = 0f
+            v.translationY = 0f
+            v.scaleX = 1f
+            v.scaleY = 1f
+            v.translationZ = 0f
         }
     }
 
-    /** Where each icon is on screen now, so a re-order can glide them from there. */
-    fun positions(): Map<Any?, Pair<Int, Int>> {
-        val loc = IntArray(2)
-        return icons().associate { v -> v.getLocationInWindow(loc); v.tagItem to (loc[0] to loc[1]) }
-    }
-
-    /** After the icons are re-laid, slide each from where it was to where it is. */
-    fun glideFrom(before: Map<Any?, Pair<Int, Int>>) {
-        if (!Pixel.motion(context)) return
-        grid.viewTreeObserver.addOnPreDrawListener(object : android.view.ViewTreeObserver.OnPreDrawListener {
-            override fun onPreDraw(): Boolean {
-                grid.viewTreeObserver.removeOnPreDrawListener(this)
-                val loc = IntArray(2)
-                for (v in icons()) {
-                    val old = before[v.tagItem] ?: continue
-                    v.getLocationInWindow(loc)
-                    v.translationX = (old.first - loc[0]).toFloat()
-                    v.translationY = (old.second - loc[1]).toFloat()
-                    v.animate().translationX(0f).translationY(0f).setDuration(220).setInterpolator(Ease.move).start()
-                }
-                return true
-            }
-        })
-    }
+    fun icons(): List<AppIconView> = grid.order.filterIsInstance<AppIconView>()
 
     /** The panel grows out of nothing and the dim fades in. */
     fun popIn() {
@@ -414,15 +547,6 @@ class FolderView(context: Context) : FrameLayout(context) {
             panel.scaleX = 1f
             panel.scaleY = 1f
         }.start()
-    }
-
-    fun icons(): List<AppIconView> {
-        val out = mutableListOf<AppIconView>()
-        for (r in 0 until grid.childCount) {
-            val row = grid.getChildAt(r) as? ViewGroup ?: continue
-            for (i in 0 until row.childCount) (row.getChildAt(i) as? AppIconView)?.let(out::add)
-        }
-        return out
     }
 
     fun hideKeyboard() {

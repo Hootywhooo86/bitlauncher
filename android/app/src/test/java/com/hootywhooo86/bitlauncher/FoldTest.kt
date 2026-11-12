@@ -43,7 +43,7 @@ class FoldTest {
         }
         val layout = HomeLayout.empty(GridSize.MEDIUM)
         for (i in 4 until 34) layout.placeAnywhere(AppItem(keys[i % 30], 0, 0))
-        for (i in 0 until 4) layout.dock[i] = keys[i]
+        for (i in 0 until 4) layout.setDock(i, AppItem(keys[i], i, 0))
         LayoutStore(ctx).save(layout)
 
         val home = Robolectric.buildActivity(LauncherActivity::class.java).setup().get()

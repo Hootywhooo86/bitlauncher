@@ -77,7 +77,7 @@ class LayoutTest {
 
     @Test
     fun dockOverflowMovesToHome() {
-        val layout = HomeLayout(GridSize.LARGE, mutableListOf(), MutableList(6) { app(it) })
+        val layout = HomeLayout(GridSize.LARGE, mutableListOf(), MutableList<Item?>(6) { AppItem(app(it), it, 0) })
         layout.resize(GridSize.SMALL)
         assertEquals(4, layout.dock.size)
         assertEquals(6, layout.allApps().size)
@@ -89,7 +89,7 @@ class LayoutTest {
         val layout = HomeLayout.empty(GridSize.MEDIUM)
         layout.pages[0].add(FolderItem("Games", mutableListOf(app(1), app(2)), 0, 0))
         layout.pages[0].add(AppItem(app(2), 1, 0))
-        layout.dock[0] = app(2)
+        layout.setDock(0, AppItem(app(2), 0, 0))
 
         layout.removeApps { it == app(2) }
 
@@ -105,7 +105,7 @@ class LayoutTest {
         layout.pages[0].add(AppItem(app(1), 1, 2))
         layout.pages[0].add(FolderItem("Work", mutableListOf(app(2), app(3)), 0, 0))
         layout.pages.add(mutableListOf(WidgetItem(9, "a/B", 0, 0, 4, 2)))
-        layout.dock[1] = app(4)
+        layout.setDock(1, AppItem(app(4), 1, 0))
 
         val back = HomeLayout.fromJson(JSONObject(layout.toJson().toString()))
 
@@ -154,5 +154,43 @@ class LayoutTest {
         layout.removeApps { it == app(3) }
         assertNull(folder.cover)
         assertEquals(listOf(app(1), app(2)), folder.apps)
+    }
+
+    @Test
+    fun oldLayoutsWithBareDockAppsStillLoad() {
+        // Saved before the dock could hold folders: plain app keys, no "t".
+        val json = JSONObject("""{"v":1,"grid":"5x6","pages":[[]],"dock":[{"pkg":"pkg.1","cls":"Main","user":0},null,{"pkg":"pkg.2","cls":"Main","user":0}]}""")
+        val layout = HomeLayout.fromJson(json)
+        assertEquals(app(1), layout.dockApp(0))
+        assertNull(layout.dock[1])
+        assertEquals(app(2), layout.dockApp(2))
+        assertEquals(2, (layout.dock[2] as AppItem).x)
+    }
+
+    @Test
+    fun foldersLiveInTheDock() {
+        val layout = HomeLayout.empty(GridSize.MEDIUM)
+        layout.setDock(3, FolderItem("Social", mutableListOf(app(1), app(2), app(3)), 0, 0))
+        val back = HomeLayout.fromJson(JSONObject(layout.toJson().toString()))
+        val folder = back.dock[3] as FolderItem
+        assertEquals(listOf(app(1), app(2), app(3)), folder.apps)
+        assertEquals(3, folder.x)
+        assertTrue(back.allApps().containsAll(listOf(app(1), app(2), app(3))))
+
+        // Uninstalling apps down to one turns the dock folder back into that app.
+        back.removeApps { it == app(1) || it == app(2) }
+        assertEquals(app(3), back.dockApp(3))
+    }
+
+    @Test
+    fun shrinkingTheGridMovesDockFoldersHomeIntact() {
+        val layout = HomeLayout.empty(GridSize.LARGE)
+        for (i in 0 until 5) layout.setDock(i, AppItem(app(i), i, 0))
+        layout.setDock(5, FolderItem("Games", mutableListOf(app(7), app(8)), 0, 0))
+        layout.resize(GridSize.SMALL)
+        assertEquals(4, layout.dock.size)
+        val moved = layout.pages.flatten()
+        assertTrue(moved.any { it is FolderItem && it.apps == listOf(app(7), app(8)) })
+        assertEquals(setOf(app(0), app(1), app(2), app(3), app(4), app(7), app(8)), layout.allApps().toSet())
     }
 }
