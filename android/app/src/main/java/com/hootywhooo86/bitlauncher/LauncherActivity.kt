@@ -37,6 +37,10 @@ class LauncherActivity : Activity() {
     private lateinit var scene: SceneView
     private lateinit var today: TodayView
     private lateinit var media: MediaSource
+    private val account by lazy { FamilyAccount(this) }
+    private var familyEvents: List<FamilyEvent>? = null
+    private var familyFetchedAt = 0L
+    private var familyProblem: String? = null
     private var lastWeather: WeatherNow? = null
     private val todayWidgetViews = HashMap<Int, PixelWidgetView>()
     private var widgetForToday = false
@@ -124,6 +128,7 @@ class LauncherActivity : Activity() {
 
     override fun onStop() {
         super.onStop()
+        autoBackup()
         // Leaving home ends the chance to undo; removed widgets are deleted for real now.
         if (::undoBar.isInitialized) dismissUndo()
         try {
@@ -725,6 +730,29 @@ class LauncherActivity : Activity() {
         }
     }
 
+    // ---------------------------------------------------------------- 128bit account
+
+    /** The family feed for Today, fetched at most every five minutes. */
+    private fun refreshFamily() {
+        if (!account.signedIn || System.currentTimeMillis() - familyFetchedAt < 5 * 60_000L) return
+        familyFetchedAt = System.currentTimeMillis()
+        account.events(80) { r ->
+            r.onSuccess { familyEvents = it; familyProblem = null }
+            r.onFailure { familyProblem = it.message; familyFetchedAt = 0L }
+            if (today.visibility == View.VISIBLE) renderToday()
+        }
+    }
+
+    /** Leaving home after a change: back it up, at most every ten minutes. */
+    private fun autoBackup() {
+        if (!prefs.autoBackup || !account.signedIn) return
+        val now = System.currentTimeMillis()
+        if (changedAt <= account.lastBackup || now - account.lastBackup < 10 * 60_000L) return
+        account.backUp(LayoutStore.backupJson(this, prefs)) { r ->
+            account.backupProblem = r.exceptionOrNull()?.message
+        }
+    }
+
     // ---------------------------------------------------------------- page overview
 
     private lateinit var pageOverview: PageOverview
@@ -999,6 +1027,7 @@ class LauncherActivity : Activity() {
         todayAnim?.cancel()
         if (today.visibility == View.VISIBLE) return
         menu.dismiss()
+        refreshFamily()
         renderToday()
         media.start()
         setTodayProgress(0f)
@@ -1071,6 +1100,9 @@ class LauncherActivity : Activity() {
                 }
             }))
         media.current()?.let { cards.addView(TodayCards.media(this, accent, it)) }
+        cards.addView(TodayCards.family(this, accent, account.signedIn, familyEvents, familyProblem) {
+            startActivity(Intent(this, SettingsActivity::class.java))
+        })
 
         val stored = prefs.todayWidgets
         for ((id, _, hDp) in stored) {
@@ -2188,7 +2220,10 @@ class LauncherActivity : Activity() {
         }
     }
 
+    private var changedAt = 0L
+
     private fun save() {
+        changedAt = System.currentTimeMillis()
         try {
             store.save(layout)
         } catch (e: Exception) {

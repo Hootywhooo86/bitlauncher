@@ -44,6 +44,7 @@ class SettingsActivity : Activity() {
         if (Build.VERSION.SDK_INT >= 30) window.setDecorFitsSystemWindows(false)
         setContentView(scroll)
         render()
+        handleSignInReturn(intent)
     }
 
     override fun onResume() {
@@ -234,6 +235,8 @@ class SettingsActivity : Activity() {
             }
         }
 
+        accountSection(accent)
+
         section("BACKUP")
         body.addView(note("Saves your layout and settings to a file you choose. Widgets may need adding again after a restore."))
         row(listOf(
@@ -242,7 +245,7 @@ class SettingsActivity : Activity() {
         ))
 
         section("ABOUT")
-        body.addView(note("bitlauncher ${versionName()}. Part of the 128bit family. No accounts, no ads. The only thing that ever goes online is weather, and only if you turn it on."))
+        body.addView(note("bitlauncher ${versionName()}. Part of the 128bit family. No ads. Nothing goes online unless you turn on weather or sign in to your 128bit account."))
     }
 
     private fun changed(change: () -> Unit) {
@@ -421,23 +424,14 @@ class SettingsActivity : Activity() {
         if (resultCode != RESULT_OK || uri == null) return
         when (requestCode) {
             REQ_BACKUP -> try {
-                val layout = LayoutStore(this).load(prefs.grid)
-                contentResolver.openOutputStream(uri, "wt")!!.use { it.write(LayoutStore.backup(layout, prefs).toByteArray()) }
+                contentResolver.openOutputStream(uri, "wt")!!.use { it.write(LayoutStore.backup(this, prefs).toByteArray()) }
                 Pixel.say(this, "Backed up.")
             } catch (e: Exception) {
                 Pixel.say(this, "The backup couldn't be written to that file.")
             }
             REQ_RESTORE -> try {
                 val text = contentResolver.openInputStream(uri)!!.use { it.readBytes().toString(Charsets.UTF_8) }
-                val (layout, settings) = LayoutStore.parseBackup(text)
-                val dropped = dropDeadWidgets(layout)
-                prefs.grid = layout.grid
-                prefs.restore(settings)
-                LayoutStore(this).save(layout)
-                // The home screen reads the restored layout fresh.
-                startActivity(Intent(this, LauncherActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_CLEAR_TASK or Intent.FLAG_ACTIVITY_NEW_TASK))
-                Pixel.say(this, if (dropped > 0) "Restored. $dropped widget${if (dropped == 1) "" else "s"} need adding again." else "Restored.")
-                finish()
+                restored(LayoutStore.restore(this, prefs, text))
             } catch (e: IllegalArgumentException) {
                 Pixel.say(this, e.message ?: "That file isn't a bitlauncher backup.")
             } catch (e: Exception) {
@@ -446,16 +440,133 @@ class SettingsActivity : Activity() {
         }
     }
 
-    /** Widget ids only mean something on the phone that made them. Drop the ones that don't exist here. */
-    private fun dropDeadWidgets(layout: HomeLayout): Int {
-        val manager = android.appwidget.AppWidgetManager.getInstance(this)
-        var dropped = 0
-        for (page in layout.pages) {
-            val dead = page.filterIsInstance<WidgetItem>().filter { manager.getAppWidgetInfo(it.widgetId) == null }
-            dropped += dead.size
-            page.removeAll(dead)
+    /** After a restore: home starts fresh from the restored layout. */
+    private fun restored(dropped: Int) {
+        startActivity(Intent(this, LauncherActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_CLEAR_TASK or Intent.FLAG_ACTIVITY_NEW_TASK))
+        Pixel.say(this, if (dropped > 0) "Restored. $dropped widget${if (dropped == 1) "" else "s"} need adding again." else "Restored.")
+        finish()
+    }
+
+    // ---------------------------------------------------------------- 128bit account
+
+    private val account by lazy { FamilyAccount(this) }
+
+    private fun accountSection(accent: Int) {
+        section("128BIT ACCOUNT")
+        if (!account.signedIn) {
+            body.addView(note("The same account as 128bitFIT, Play and Tracker. Signed in, bitlauncher backs up your layouts and settings, and Today shows your quests and 128bit activity."))
+            val email = field("EMAIL", android.text.InputType.TYPE_CLASS_TEXT or android.text.InputType.TYPE_TEXT_VARIATION_EMAIL_ADDRESS, accent)
+            val password = field("PASSWORD", android.text.InputType.TYPE_CLASS_TEXT or android.text.InputType.TYPE_TEXT_VARIATION_PASSWORD, accent)
+            body.addView(email.full())
+            body.addView(password.full())
+            row(listOf(
+                Pixel.button(this, "SIGN IN", accent) {
+                    if (email.text.isBlank() || password.text.isEmpty()) {
+                        Pixel.say(this, "Type your email and password first.")
+                        return@button
+                    }
+                    account.signIn(email.text.toString(), password.text.toString()) { r -> afterSignIn(r) }
+                },
+                Pixel.button(this, "GOOGLE", accent) {
+                    try {
+                        startActivity(Intent(Intent.ACTION_VIEW, android.net.Uri.parse(account.googleUrl())))
+                    } catch (e: Exception) {
+                        Pixel.say(this, "No browser found for Google sign-in.")
+                    }
+                },
+            ))
+            return
         }
-        return dropped
+        body.addView(note("Signed in as ${account.email}." + if (account.lastBackup > 0)
+            " Last backup ${android.text.format.DateUtils.getRelativeTimeSpanString(account.lastBackup)}." else " Not backed up yet."))
+        row(listOf(
+            Pixel.button(this, "BACK UP NOW", accent) {
+                account.backUp(LayoutStore.backupJson(this, prefs)) { r ->
+                    Pixel.say(this, r.exceptionOrNull()?.message ?: "Backed up to your 128bit account.")
+                    if (r.isSuccess) account.backupProblem = null
+                    render()
+                }
+            },
+            Pixel.button(this, "RESTORE", accent) { restoreFromAccount() },
+        ))
+        body.addView(Pixel.label(this, "AUTO BACKUP", 9f, Pixel.MUTED).apply { setPadding(0, Pixel.dpi(context, 10), 0, Pixel.dpi(context, 6)) })
+        row(listOf(
+            choice("ON", prefs.autoBackup) { changed { prefs.autoBackup = true } },
+            choice("OFF", !prefs.autoBackup) { changed { prefs.autoBackup = false } },
+        ))
+        body.addView(note("Backs up after you change something, at most every ten minutes, when you leave home."))
+        account.backupProblem?.let { body.addView(note("The last automatic backup didn't work: $it")) }
+        body.addView(Pixel.button(this, "SIGN OUT", accent) {
+            account.signOut()
+            render()
+        }.full())
+    }
+
+    private fun field(hint: String, type: Int, accent: Int) = NoDropEditText(this).apply {
+        this.hint = hint
+        typeface = Pixel.font(context)
+        textSize = 12f
+        setTextColor(Pixel.INK)
+        setHintTextColor(Pixel.MUTED)
+        inputType = type
+        isSingleLine = true
+        background = PanelDrawable(context, Pixel.BG, Pixel.MUTED)
+        val p = Pixel.dpi(context, 12)
+        setPadding(p, p, p, p)
+    }
+
+    private fun afterSignIn(r: Result<Unit>) {
+        if (r.isFailure) {
+            Pixel.say(this, r.exceptionOrNull()?.message ?: "Couldn't sign in.")
+            return
+        }
+        Pixel.say(this, "Signed in.")
+        render()
+        // This phone has never backed up (a new phone, say): offer what's already in the account.
+        // It asks before replacing anything.
+        if (account.lastBackup == 0L) account.fetchBackup { b -> if (b.getOrNull() != null) restoreFromAccount() }
+    }
+
+    private fun restoreFromAccount() {
+        account.fetchBackup { r ->
+            val backup = r.getOrElse {
+                Pixel.say(this, it.message ?: "Couldn't reach your 128bit account.")
+                return@fetchBackup
+            }
+            if (backup == null) {
+                Pixel.say(this, "There's no backup in your account yet.")
+                return@fetchBackup
+            }
+            android.app.AlertDialog.Builder(this)
+                .setTitle("Restore from your account?")
+                .setMessage("Your home screen, Work layout and settings will be replaced with the backup.")
+                .setPositiveButton("Restore") { _, _ ->
+                    try {
+                        restored(LayoutStore.restore(this, prefs, backup.toString()))
+                    } catch (e: Exception) {
+                        Pixel.say(this, "That backup couldn't be read.")
+                    }
+                }
+                .setNegativeButton("Cancel", null)
+                .show()
+        }
+    }
+
+    /** Google sign-in comes back here (bitlauncher://family-auth?code=...). */
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        handleSignInReturn(intent)
+    }
+
+    private fun handleSignInReturn(intent: Intent?) {
+        val data = intent?.data ?: return
+        if (data.scheme != "bitlauncher") return
+        val code = data.getQueryParameter("code")
+        if (code == null) {
+            Pixel.say(this, data.getQueryParameter("error_description") ?: "Google sign-in was cancelled.")
+            return
+        }
+        account.finishGoogle(code) { r -> afterSignIn(r) }
     }
 
     private fun versionName(): String = try {

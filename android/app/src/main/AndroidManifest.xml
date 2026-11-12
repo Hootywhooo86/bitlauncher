@@ -109,8 +109,17 @@
 
         <activity
             android:name=".SettingsActivity"
-            android:exported="false"
+            android:exported="true"
             android:label="@string/settings"
-            android:taskAffinity="" />
+            android:launchMode="singleTop"
+            android:taskAffinity="">
+            <!-- Google sign-in to the 128bit account comes back here. -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="bitlauncher" android:host="family-auth" />
+            </intent-filter>
+        </activity>
     </application>
 </manifest>

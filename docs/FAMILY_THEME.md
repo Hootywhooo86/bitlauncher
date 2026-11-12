@@ -57,3 +57,27 @@ sendBroadcast(Intent("com.hootywhooo86.bitlauncher.SET_MODE")
 A switch from an app holds until the next one, so send both "work" and "home". Anything
 other than those two values is ignored, and the broadcast can only choose between the
 user's own two layouts.
+
+## 3. Quests on the Today page (for 128bitlife)
+
+bitlauncher's Today page shows open quests from the family feed. 128bitlife posts them
+with `log_events`:
+
+```json
+{ "id": "life-quest-q1", "app": "life", "type": "quest.issued", "at": 1791427200000,
+  "data": { "quest": "q1", "title": "Log 3 workouts this week", "xp": 50 } }
+{ "id": "life-quest-q1-done", "app": "life", "type": "quest.completed", "at": 1791513600000,
+  "data": { "quest": "q1" } }
+```
+
+A quest shows until a `quest.completed` with the same `data.quest` arrives (if `quest` is
+missing, the title is used to match). `xp` is optional. Until 128bitlife exists the card
+says "No quests yet"; it never invents one.
+
+## 4. Layout backups
+
+Signed in to the family account, bitlauncher stores one backup (both layouts and its
+settings) with `put_settings(new_data, app_key => 'bitlauncher')` and reads it back with
+`get_settings('bitlauncher')`, the same per-app store 128bitPlay uses. Google sign-in comes
+back to `bitlauncher://family-auth`, which must be listed in the project's
+**Authentication → URL Configuration → Redirect URLs**.

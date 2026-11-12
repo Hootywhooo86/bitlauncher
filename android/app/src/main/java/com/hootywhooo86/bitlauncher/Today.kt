@@ -136,6 +136,49 @@ class MediaSource(private val context: Context, private val onChanged: () -> Uni
 
 /** Cards for the Today page and the lock screen. Each is a pixel panel. */
 object TodayCards {
+    /**
+     * The 128bit card: open quests from 128bitlife, then the latest from FIT, Play, Tracker and
+     * the rest. Signed out, it says what signing in brings; no made-up quests, ever.
+     */
+    fun family(context: Context, accent: Int, signedIn: Boolean, events: List<FamilyEvent>?, problem: String?, onSignIn: () -> Unit): View =
+        panel(context).apply {
+            addView(heading(context, "128bit", accent))
+            if (!signedIn) {
+                addView(body(context, "Sign in to your 128bit account to see your quests and what you've done in FIT, Play and Tracker.", 14f, Pixel.MUTED))
+                addView(Pixel.button(context, "SIGN IN", accent) { onSignIn() }, LinearLayout.LayoutParams(-2, -2).apply { topMargin = Pixel.dpi(context, 10) })
+                return@apply
+            }
+            if (events == null) {
+                addView(body(context, problem ?: "Loading…", 14f, Pixel.MUTED))
+                return@apply
+            }
+            addView(Pixel.label(context, "QUESTS", 9f, Pixel.MUTED).apply { setPadding(0, 0, 0, Pixel.dpi(context, 4)) })
+            val quests = FamilyFeed.openQuests(events)
+            if (quests.isEmpty()) {
+                addView(body(context, "No quests yet. 128bitlife will put them here.", 14f, Pixel.MUTED))
+            } else {
+                for (q in quests.take(3)) addView(LinearLayout(context).apply {
+                    gravity = Gravity.CENTER_VERTICAL
+                    setPadding(0, Pixel.dpi(context, 3), 0, Pixel.dpi(context, 3))
+                    addView(Pixel.label(context, "!", 12f, accent), LinearLayout.LayoutParams(Pixel.dpi(context, 18), -2))
+                    addView(body(context, q.data.optString("title").ifBlank { "Quest" }, 15f).apply { maxLines = 2 }, LinearLayout.LayoutParams(0, -2, 1f))
+                    q.data.optInt("xp").takeIf { it > 0 }?.let { addView(Pixel.label(context, "+$it XP", 9f, accent)) }
+                })
+            }
+            val lately = FamilyFeed.lately(events)
+            if (lately.isNotEmpty()) {
+                addView(Pixel.label(context, "LATELY", 9f, Pixel.MUTED).apply { setPadding(0, Pixel.dpi(context, 12), 0, Pixel.dpi(context, 4)) })
+                for (e in lately) addView(LinearLayout(context).apply {
+                    gravity = Gravity.CENTER_VERTICAL
+                    setPadding(0, Pixel.dpi(context, 3), 0, Pixel.dpi(context, 3))
+                    addView(Pixel.label(context, e.app.uppercase().take(7), 8f, accent), LinearLayout.LayoutParams(Pixel.dpi(context, 64), -2))
+                    addView(body(context, FamilyFeed.describe(e), 14f).apply { maxLines = 1; ellipsize = android.text.TextUtils.TruncateAt.END }, LinearLayout.LayoutParams(0, -2, 1f))
+                    addView(body(context, DateUtils.getRelativeTimeSpanString(e.at, System.currentTimeMillis(), DateUtils.MINUTE_IN_MILLIS,
+                        DateUtils.FORMAT_ABBREV_RELATIVE).toString(), 11f, Pixel.MUTED))
+                })
+            }
+        }
+
     fun panel(context: Context, accent: Int? = null): LinearLayout = LinearLayout(context).apply {
         orientation = LinearLayout.VERTICAL
         background = PanelDrawable(context, withAlpha(Pixel.PANEL, 235), accent ?: withAlpha(Pixel.MUTED, 140))

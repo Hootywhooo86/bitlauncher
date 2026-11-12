@@ -39,13 +39,47 @@ class LayoutStore(context: Context, mode: String = Shift.HOME) {
     }
 
     companion object {
-        /** A backup is the layout plus settings in one file the user keeps. */
-        fun backup(layout: HomeLayout, prefs: Prefs): String = JSONObject()
-            .put("app", "bitlauncher")
-            .put("backup", 1)
-            .put("layout", layout.toJson())
-            .put("settings", prefs.toJson())
-            .toString(2)
+        /** A backup is both layouts (Home and, if you've made one, Work) plus settings. */
+        fun backupJson(context: Context, prefs: Prefs): JSONObject {
+            val home = LayoutStore(context, Shift.HOME)
+            val work = LayoutStore(context, Shift.WORK)
+            return JSONObject()
+                .put("app", "bitlauncher")
+                .put("backup", 1)
+                .put("layout", home.load(prefs.grid).toJson())
+                .put("settings", prefs.toJson())
+                .also { o -> if (!work.isFirstRun()) o.put("work", work.load(prefs.grid).toJson()) }
+        }
+
+        fun backup(context: Context, prefs: Prefs): String = backupJson(context, prefs).toString(2)
+
+        /** Put a backup in place: layouts saved, settings applied. Returns how many widgets need adding again. */
+        fun restore(context: Context, prefs: Prefs, text: String): Int {
+            val (layout, settings) = parseBackup(text)
+            val o = JSONObject(text)
+            var dropped = dropDeadWidgets(context, layout)
+            prefs.grid = layout.grid
+            prefs.restore(settings)
+            LayoutStore(context, Shift.HOME).save(layout)
+            o.optJSONObject("work")?.let {
+                val work = HomeLayout.fromJson(it)
+                dropped += dropDeadWidgets(context, work)
+                LayoutStore(context, Shift.WORK).save(work)
+            }
+            return dropped
+        }
+
+        /** Widget ids only mean something on the phone that made them. Drop the ones that don't exist here. */
+        private fun dropDeadWidgets(context: Context, layout: HomeLayout): Int {
+            val manager = android.appwidget.AppWidgetManager.getInstance(context)
+            var dropped = 0
+            for (page in layout.pages) {
+                val dead = page.filterIsInstance<WidgetItem>().filter { manager.getAppWidgetInfo(it.widgetId) == null }
+                dropped += dead.size
+                page.removeAll(dead)
+            }
+            return dropped
+        }
 
         /** Parse a backup. Throws with a readable message if it isn't one. */
         fun parseBackup(text: String): Pair<HomeLayout, JSONObject> {

@@ -153,6 +153,11 @@ class Prefs(context: Context) {
     val firstSeen: Long
         get() = sp.getLong("firstSeen", 0L).takeIf { it > 0 } ?: System.currentTimeMillis().also { sp.edit().putLong("firstSeen", it).apply() }
 
+        /** Back up to the 128bit account automatically (when signed in). */
+    var autoBackup: Boolean
+        get() = sp.getBoolean("autoBackup", true)
+        set(v) = sp.edit().putBoolean("autoBackup", v).apply()
+
         /** App ids hidden from the drawer. */
     var hidden: Set<String>
         get() = sp.getStringSet("hidden", emptySet())!!.toSet()
