@@ -116,6 +116,34 @@ class Prefs(context: Context) {
             v.forEach { (id, provider, h) -> a.put(JSONObject().put("id", id).put("provider", provider).put("h", h)) }
         }.toString()).apply()
 
+        /** Which layout is showing: "home" or "work". */
+    var mode: String
+        get() = sp.getString("mode", Shift.HOME)!!
+        set(v) = sp.edit().putString("mode", v).apply()
+
+    /** A hand (or family app) switch holds until this time; then the schedule decides again. */
+    var modeHeldUntil: Long
+        get() = sp.getLong("modeHeldUntil", 0L)
+        set(v) = sp.edit().putLong("modeHeldUntil", v).apply()
+
+    var shiftSchedule: Boolean
+        get() = sp.getBoolean("shiftSchedule", false)
+        set(v) = sp.edit().putBoolean("shiftSchedule", v).apply()
+
+    /** Work days, as Calendar.SUNDAY..SATURDAY. Monday to Friday until changed. */
+    var shiftDays: Set<Int>
+        get() = sp.getStringSet("shiftDays", setOf("2", "3", "4", "5", "6"))!!.mapNotNull { it.toIntOrNull() }.toSet()
+        set(v) = sp.edit().putStringSet("shiftDays", v.map { it.toString() }.toSet()).apply()
+
+    /** Minutes after midnight. */
+    var shiftStart: Int
+        get() = sp.getInt("shiftStart", 9 * 60)
+        set(v) = sp.edit().putInt("shiftStart", v).apply()
+
+    var shiftEnd: Int
+        get() = sp.getInt("shiftEnd", 17 * 60)
+        set(v) = sp.edit().putInt("shiftEnd", v).apply()
+
         /** App ids hidden from the drawer. */
     var hidden: Set<String>
         get() = sp.getStringSet("hidden", emptySet())!!.toSet()
@@ -145,6 +173,10 @@ class Prefs(context: Context) {
         .put("lockDetail", lockDetail)
         .put("hidden", JSONArray(hidden.toList()))
         .put("theme", theme)
+        .put("shiftSchedule", shiftSchedule)
+        .put("shiftDays", JSONArray(shiftDays.toList()))
+        .put("shiftStart", shiftStart)
+        .put("shiftEnd", shiftEnd)
         .put("scene", scene)
         .put("weather", weather)
         .put("fahrenheit", fahrenheit)
@@ -162,6 +194,10 @@ class Prefs(context: Context) {
         lockScreen = o.optBoolean("lockScreen", lockScreen)
         lockDetail = o.optInt("lockDetail", lockDetail)
         theme = o.optString("theme", theme)
+        shiftSchedule = o.optBoolean("shiftSchedule", shiftSchedule)
+        o.optJSONArray("shiftDays")?.let { a -> shiftDays = (0 until a.length()).map { a.getInt(it) }.toSet() }
+        shiftStart = o.optInt("shiftStart", shiftStart)
+        shiftEnd = o.optInt("shiftEnd", shiftEnd)
         scene = o.optString("scene", scene)
         weather = o.optBoolean("weather", weather)
         fahrenheit = o.optBoolean("fahrenheit", fahrenheit)

@@ -27,6 +27,8 @@ import kotlin.math.ceil
 class LauncherActivity : Activity() {
     private lateinit var prefs: Prefs
     private lateinit var store: LayoutStore
+    /** Which layout is showing: Shift.HOME or Shift.WORK. */
+    private var mode = Shift.HOME
     private lateinit var icons: IconCache
     private lateinit var usage: Usage
     private lateinit var scene: SceneView
@@ -76,12 +78,13 @@ class LauncherActivity : Activity() {
         prefs = Prefs(this)
         appliedTheme = prefs.theme
         appliedPack = prefs.iconPack
-        store = LayoutStore(this)
         icons = IconCache(this)
         usage = Usage(this)
         weather = WeatherClient(this)
-        firstRun = store.isFirstRun()
-        layout = store.load(prefs.grid)
+        firstRun = LayoutStore(this, Shift.HOME).isFirstRun()
+        mode = Shift.current(prefs)
+        store = LayoutStore(this, mode)
+        layout = if (store.isFirstRun() && mode == Shift.WORK) workFromHome() else store.load(prefs.grid)
         widgetManager = AppWidgetManager.getInstance(this)
         widgetHost = PixelWidgetHost(this)
         menu = PixelMenu(this, prefs.accent)
@@ -124,6 +127,7 @@ class LauncherActivity : Activity() {
     override fun onResume() {
         super.onResume()
         if (prefs.version != appliedPrefs) applyPrefs()
+        Shift.current(prefs).let { if (it != mode) switchMode(it) }
         applyScene()
         refreshWeather()
     }
@@ -443,7 +447,8 @@ class LauncherActivity : Activity() {
     }
 
     private fun updateDate() {
-        dateLabel.text = java.text.SimpleDateFormat("EEE d MMM", java.util.Locale.getDefault()).format(java.util.Date()).uppercase()
+        dateLabel.text = java.text.SimpleDateFormat("EEE d MMM", java.util.Locale.getDefault()).format(java.util.Date()).uppercase() +
+            if (mode == Shift.WORK) "  ·  WORK" else ""
     }
 
     /** Dots on every icon (and folder) whose app has something new. Only redraws what changed. */
@@ -657,6 +662,30 @@ class LauncherActivity : Activity() {
         } catch (e: Exception) {
             Pixel.say(this, "${apps.label(key)} can't be opened. It may have been uninstalled or disabled.")
         }
+    }
+
+    // ---------------------------------------------------------------- shift mode
+
+    /** The first time Work is used, it starts as a copy of Home (without widgets: each layout owns its own). */
+    private fun workFromHome(): HomeLayout {
+        val copy = HomeLayout.fromJson(org.json.JSONObject(LayoutStore(this, Shift.HOME).load(prefs.grid).toJson().toString()))
+        copy.pages.forEach { page -> page.removeAll { it is WidgetItem } }
+        LayoutStore(this, Shift.WORK).save(copy)
+        Pixel.say(this, "Work layout made from a copy of Home. Change it however you like.")
+        return copy
+    }
+
+    private fun switchMode(newMode: String) {
+        save()
+        closeOverlays()
+        mode = newMode
+        prefs.mode = newMode
+        store = LayoutStore(this, newMode)
+        layout = if (store.isFirstRun() && newMode == Shift.WORK) workFromHome() else store.load(prefs.grid)
+        positionChrome()
+        rebuild()
+        updateDate()
+        workspace.snapTo(0, animate = false)
     }
 
     // ---------------------------------------------------------------- scene and weather
@@ -1242,6 +1271,12 @@ class LauncherActivity : Activity() {
         val labelsHere = page !in layout.unlabelledPages
         menu.show(workspace, listOf(
             PixelMenu.Entry("Widgets") { showWidgetPicker() },
+            PixelMenu.Entry(if (mode == Shift.WORK) "Switch to Home layout" else "Switch to Work layout") {
+                val next = if (mode == Shift.WORK) Shift.HOME else Shift.WORK
+                Shift.hold(prefs, next)
+                appliedPrefs = prefs.version
+                switchMode(next)
+            },
             PixelMenu.Entry(if (labelsHere) "Hide labels on this page" else "Show labels on this page") {
                 while (page >= layout.pages.size) layout.pages.add(mutableListOf())
                 if (labelsHere) layout.unlabelledPages.add(page) else layout.unlabelledPages.remove(page)

@@ -8,9 +8,11 @@ import java.io.File
  * Keeps the home layout on disk. Writes go to a temp file and are renamed into place, and the
  * previous good copy is kept, so a crash mid-write can't lose anyone's home screen.
  */
-class LayoutStore(context: Context) {
-    private val file = File(context.filesDir, "layout.json")
-    private val previous = File(context.filesDir, "layout.prev.json")
+class LayoutStore(context: Context, mode: String = Shift.HOME) {
+    // Home keeps its original file name, so layouts from before shift mode carry straight on.
+    private val name = if (mode == Shift.HOME) "layout" else "layout.$mode"
+    private val file = File(context.filesDir, "$name.json")
+    private val previous = File(context.filesDir, "$name.prev.json")
 
     fun load(grid: GridSize): HomeLayout {
         for (f in listOf(file, previous)) {

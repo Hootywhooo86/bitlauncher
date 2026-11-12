@@ -80,6 +80,21 @@
                 android:resource="@xml/lock_service" />
         </service>
 
+        <!-- Shift mode: a 128bit app (Railtime) can switch between your Home and Work layouts. -->
+        <receiver
+            android:name=".ShiftReceiver"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="com.hootywhooo86.bitlauncher.SET_MODE" />
+            </intent-filter>
+        </receiver>
+
+        <!-- The current accent and theme colours, read-only, for 128bit apps' widgets to match. -->
+        <provider
+            android:name=".FamilyThemeProvider"
+            android:authorities="com.hootywhooo86.bitlauncher.theme"
+            android:exported="true" />
+
         <activity
             android:name=".SettingsActivity"
             android:exported="false"

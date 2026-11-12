@@ -197,6 +197,8 @@ class SettingsActivity : Activity() {
             }.full())
         }
 
+        shiftSection(accent)
+
         notificationSection(accent)
 
         section("APP DRAWER")
@@ -244,10 +246,45 @@ class SettingsActivity : Activity() {
     }
 
     private fun changed(change: () -> Unit) {
+        val look = prefs.accent to prefs.theme
         change()
         prefs.touch()
         (application as? BitApp)?.syncLockScreen()
+        if (look != (prefs.accent to prefs.theme)) FamilyTheme.broadcast(this)
         render()
+    }
+
+    private fun clockText(minutes: Int): String {
+        val cal = java.util.Calendar.getInstance().apply { set(java.util.Calendar.HOUR_OF_DAY, minutes / 60); set(java.util.Calendar.MINUTE, minutes % 60) }
+        return android.text.format.DateFormat.getTimeFormat(this).format(cal.time)
+    }
+
+    private fun pickTime(current: Int, set: (Int) -> Unit) {
+        android.app.TimePickerDialog(this, { _, h, m -> changed { set(h * 60 + m) } }, current / 60, current % 60,
+            android.text.format.DateFormat.is24HourFormat(this)).show()
+    }
+
+    private fun shiftSection(accent: Int) {
+        section("SHIFT MODE")
+        body.addView(note("A second layout for work. Switch by holding empty space on home, on a schedule, or let Railtime switch it when you go on and off duty. Work starts as a copy of Home."))
+        body.addView(note(if (prefs.mode == Shift.WORK) "Showing: Work layout." else "Showing: Home layout."))
+        body.addView(Pixel.label(this, "SCHEDULE", 9f, Pixel.MUTED).apply { setPadding(0, Pixel.dpi(context, 8), 0, Pixel.dpi(context, 6)) })
+        row(listOf(
+            choice("ON", prefs.shiftSchedule) { changed { prefs.shiftSchedule = true; prefs.modeHeldUntil = 0L } },
+            choice("OFF", !prefs.shiftSchedule) { changed { prefs.shiftSchedule = false } },
+        ))
+        if (!prefs.shiftSchedule) return
+        val names = listOf("S", "M", "T", "W", "T", "F", "S")
+        row((1..7).map { day ->
+            choice(names[day - 1], day in prefs.shiftDays) {
+                changed { prefs.shiftDays = if (day in prefs.shiftDays) prefs.shiftDays - day else prefs.shiftDays + day }
+            }
+        })
+        row(listOf(
+            Pixel.button(this, "FROM ${clockText(prefs.shiftStart)}", accent) { pickTime(prefs.shiftStart) { prefs.shiftStart = it } },
+            Pixel.button(this, "TO ${clockText(prefs.shiftEnd)}", accent) { pickTime(prefs.shiftEnd) { prefs.shiftEnd = it } },
+        ))
+        body.addView(note("An end earlier than the start is an overnight shift. Switching by hand holds until the schedule next changes."))
     }
 
     private fun notificationSection(accent: Int) {
