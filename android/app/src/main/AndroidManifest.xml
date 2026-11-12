@@ -7,6 +7,9 @@
     <uses-permission android:name="android.permission.REQUEST_DELETE_PACKAGES" />
     <!-- Only if you turn on contact search in Settings; asked for then, not before. -->
     <uses-permission android:name="android.permission.READ_CONTACTS" />
+    <!-- Weather only, and only once you turn it on: rough location to Open-Meteo. -->
+    <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
     <!-- A launcher has to see every app it can launch. -->
     <uses-permission android:name="android.permission.QUERY_ALL_PACKAGES" />
 

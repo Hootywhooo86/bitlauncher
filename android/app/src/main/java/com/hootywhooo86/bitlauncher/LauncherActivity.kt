@@ -29,6 +29,8 @@ class LauncherActivity : Activity() {
     private lateinit var store: LayoutStore
     private lateinit var icons: IconCache
     private lateinit var usage: Usage
+    private lateinit var scene: SceneView
+    private lateinit var weather: WeatherClient
     private lateinit var apps: AppList
     private lateinit var layout: HomeLayout
 
@@ -72,6 +74,7 @@ class LauncherActivity : Activity() {
         store = LayoutStore(this)
         icons = IconCache(this)
         usage = Usage(this)
+        weather = WeatherClient(this)
         firstRun = store.isFirstRun()
         layout = store.load(prefs.grid)
         widgetManager = AppWidgetManager.getInstance(this)
@@ -116,6 +119,8 @@ class LauncherActivity : Activity() {
     override fun onResume() {
         super.onResume()
         if (prefs.version != appliedPrefs) applyPrefs()
+        applyScene()
+        refreshWeather()
     }
 
     override fun onPause() {
@@ -190,7 +195,11 @@ class LauncherActivity : Activity() {
 
     private fun buildViews() {
         root = FrameLayout(this)
+        // The pixel scene sits behind everything; with "phone wallpaper" it's simply hidden.
+        scene = SceneView(this)
+        root.addView(scene, FrameLayout.LayoutParams(-1, -1))
         workspace = Workspace(this)
+        workspace.onScrolled = { scene.setScroll(it) }
         workspace.panes = panesFor(resources.configuration)
         workspace.listener = object : Workspace.Listener {
             override fun onDrawerDrag(px: Float) = dragDrawer(px)
@@ -625,6 +634,35 @@ class LauncherActivity : Activity() {
             Pixel.say(this, "${apps.label(key)} can't be opened. It may have been uninstalled or disabled.")
         }
     }
+
+    // ---------------------------------------------------------------- scene and weather
+
+    private fun applyScene() {
+        val key = prefs.scene
+        scene.visibility = if (key == "none") View.GONE else View.VISIBLE
+        scene.scene = key
+    }
+
+    /** Fetch weather if it's on and stale; then let everything that shows it update. */
+    private fun refreshWeather() {
+        if (!prefs.weather) {
+            scene.sky = null
+            onWeather(null)
+            return
+        }
+        weather.cached()?.let { applyWeather(it) }
+        weather.refreshIfStale { it?.let(::applyWeather) ?: onWeather(null) }
+    }
+
+    private fun applyWeather(w: WeatherNow) {
+        scene.sunrise = w.sunrise
+        scene.sunset = w.sunset
+        scene.sky = w.sky
+        onWeather(w)
+    }
+
+    /** Hook for the Today page (and anything else that shows weather). */
+    private fun onWeather(w: WeatherNow?) {}
 
     // ---------------------------------------------------------------- gestures
 

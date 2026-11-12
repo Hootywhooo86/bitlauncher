@@ -120,6 +120,38 @@ class SettingsActivity : Activity() {
             }, LinearLayout.LayoutParams(-1, -2).apply { bottomMargin = Pixel.dpi(this@SettingsActivity, 6) })
         }
 
+        section("SCENE")
+        body.addView(note("A pixel landscape behind your home screen. It slides as you swipe and follows the time of day."))
+        for ((key, name) in SceneView.SCENES) {
+            body.addView(choice(name.uppercase(), prefs.scene == key) { changed { prefs.scene = key } }.full())
+        }
+
+        section("WEATHER")
+        body.addView(note("Rain, snow and storms in the scene, and the forecast on Today and the lock screen. Sends only a rough location to Open-Meteo (free, no account). Off, nothing goes online."))
+        row(listOf(
+            choice("ON", prefs.weather) {
+                if (checkSelfPermission(android.Manifest.permission.ACCESS_COARSE_LOCATION) == android.content.pm.PackageManager.PERMISSION_GRANTED) {
+                    changed { prefs.weather = true }
+                } else {
+                    requestPermissions(arrayOf(android.Manifest.permission.ACCESS_COARSE_LOCATION), REQ_LOCATION)
+                }
+            },
+            choice("OFF", !prefs.weather) { changed { prefs.weather = false } },
+        ))
+        if (prefs.weather) {
+            row(listOf(
+                choice("°C", !prefs.fahrenheit) { changed { prefs.fahrenheit = false } },
+                choice("°F", prefs.fahrenheit) { changed { prefs.fahrenheit = true } },
+            ))
+            val client = WeatherClient(this)
+            val w = client.cached()
+            body.addView(note(when {
+                w != null -> "Last reading: ${WeatherCodes.describe(w.code)}, ${WeatherCodes.temp(w.tempC, prefs.fahrenheit)}" +
+                    (w.place?.let { " in $it" } ?: "") + ", " + android.text.format.DateUtils.getRelativeTimeSpanString(w.fetchedAt) + "."
+                else -> "No reading yet. It arrives the next time you go home."
+            }))
+        }
+
         section("ICON PACK")
         val packs = IconPack.installed(this)
         if (packs.isEmpty()) {
@@ -208,7 +240,7 @@ class SettingsActivity : Activity() {
         ))
 
         section("ABOUT")
-        body.addView(note("bitlauncher ${versionName()}. Part of the 128bit family. No accounts, no ads, nothing leaves your phone."))
+        body.addView(note("bitlauncher ${versionName()}. Part of the 128bit family. No accounts, no ads. The only thing that ever goes online is weather, and only if you turn it on."))
     }
 
     private fun changed(change: () -> Unit) {
@@ -397,6 +429,11 @@ class SettingsActivity : Activity() {
 
     override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, grantResults: IntArray) {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults)
+        if (requestCode == REQ_LOCATION) {
+            if (grantResults.firstOrNull() == android.content.pm.PackageManager.PERMISSION_GRANTED) changed { prefs.weather = true }
+            else Pixel.say(this, "Weather stays off: bitlauncher wasn't allowed a rough location.")
+            return
+        }
         if (requestCode != REQ_CONTACTS) return
         val granted = grantResults.firstOrNull() == android.content.pm.PackageManager.PERMISSION_GRANTED
         if (granted) changed { prefs.searchContacts = true }
@@ -405,6 +442,7 @@ class SettingsActivity : Activity() {
 
     companion object {
         private const val REQ_CONTACTS = 24
+        private const val REQ_LOCATION = 25
         private const val REQ_HOME = 21
         private const val REQ_BACKUP = 22
         private const val REQ_RESTORE = 23

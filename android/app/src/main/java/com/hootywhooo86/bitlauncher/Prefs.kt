@@ -90,6 +90,20 @@ class Prefs(context: Context) {
         }
         set(v) = sp.edit().putString("renamed", JSONObject(v as Map<*, *>).toString()).apply()
 
+        /** Pixel scene behind home (see SceneView.SCENES); "none" shows the phone's wallpaper. */
+    var scene: String
+        get() = sp.getString("scene", "none")!!
+        set(v) = sp.edit().putString("scene", v).apply()
+
+    /** Live weather (Open-Meteo, rough location). Off until turned on. */
+    var weather: Boolean
+        get() = sp.getBoolean("weather", false)
+        set(v) = sp.edit().putBoolean("weather", v).apply()
+
+    var fahrenheit: Boolean
+        get() = sp.getBoolean("fahrenheit", WeatherCodes.usesFahrenheit())
+        set(v) = sp.edit().putBoolean("fahrenheit", v).apply()
+
         /** App ids hidden from the drawer. */
     var hidden: Set<String>
         get() = sp.getStringSet("hidden", emptySet())!!.toSet()
@@ -119,6 +133,9 @@ class Prefs(context: Context) {
         .put("lockDetail", lockDetail)
         .put("hidden", JSONArray(hidden.toList()))
         .put("theme", theme)
+        .put("scene", scene)
+        .put("weather", weather)
+        .put("fahrenheit", fahrenheit)
         .put("iconPack", iconPack)
         .put("renamed", JSONObject(renamed as Map<*, *>))
 
@@ -133,6 +150,9 @@ class Prefs(context: Context) {
         lockScreen = o.optBoolean("lockScreen", lockScreen)
         lockDetail = o.optInt("lockDetail", lockDetail)
         theme = o.optString("theme", theme)
+        scene = o.optString("scene", scene)
+        weather = o.optBoolean("weather", weather)
+        fahrenheit = o.optBoolean("fahrenheit", fahrenheit)
         iconPack = o.optString("iconPack", iconPack)
         o.optJSONObject("renamed")?.let { r -> renamed = r.keys().asSequence().associateWith { r.getString(it) } }
         o.optJSONArray("hidden")?.let { a -> hidden = (0 until a.length()).map { a.getString(it) }.toSet() }

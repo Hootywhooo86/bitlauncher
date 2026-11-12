@@ -161,6 +161,14 @@ class Workspace(context: Context) : ViewGroup(context) {
     /** Screens to swipe through: pairs of pages when there are two panes. */
     val screenCount: Int get() = (childCount + panes - 1) / panes
 
+    /** Told the scroll position in screens (0 = first), for the scene's parallax. */
+    var onScrolled: ((Float) -> Unit)? = null
+
+    override fun onScrollChanged(l: Int, t: Int, oldl: Int, oldt: Int) {
+        super.onScrollChanged(l, t, oldl, oldt)
+        if (width > 0) onScrolled?.invoke(l / width.toFloat())
+    }
+
     fun page(i: Int): CellLayout? = getChildAt(i) as? CellLayout
 
     /** Pages currently on screen. */
