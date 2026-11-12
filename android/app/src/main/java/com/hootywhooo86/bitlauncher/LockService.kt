@@ -35,6 +35,21 @@ class LockService : AccessibilityService() {
             return on.split(':').any { it.equals(me, ignoreCase = true) }
         }
 
+        /**
+         * Open the pixel lock screen. Android blocks most apps from opening screens in the
+         * background (Android 10 and later), but lets an accessibility service do it, so this is
+         * the route that works. False if the service isn't connected.
+         */
+        fun showLock(intent: android.content.Intent): Boolean {
+            val service = running ?: return false
+            return try {
+                service.startActivity(intent)
+                true
+            } catch (e: Exception) {
+                false
+            }
+        }
+
         /** Lock now. False if the service isn't on (or the phone is too old to allow it). */
         fun lock(): Boolean {
             if (Build.VERSION.SDK_INT < 28) return false

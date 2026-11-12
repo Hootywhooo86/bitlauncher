@@ -350,8 +350,25 @@ class SettingsActivity : Activity() {
             choice("OFF", !prefs.lockScreen) { changed { prefs.lockScreen = false } },
         ))
         if (prefs.lockScreen) {
-            if (prefs.lockBlocked) {
-                body.addView(note("Your phone stopped the pixel lock screen from opening last time. Keeping bitlauncher as your home app usually fixes this; some phones never allow it."))
+            if (!LockService.isEnabled(this)) {
+                body.addView(note("One more step, or it won't show: Android only lets bitlauncher open its lock screen when the screen turns off if bitlauncher is on in Accessibility. It reads nothing on screen; the same switch powers double-tap to lock."))
+                body.addView(note("If Android says the setting is restricted: open App info for bitlauncher, tap the ⋮ menu, choose \"Allow restricted settings\", then try again."))
+                body.addView(Pixel.button(this, "OPEN ACCESSIBILITY", accent) {
+                    try {
+                        startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
+                    } catch (e: Exception) {
+                        Pixel.say(this, "Open your phone's Settings, then Accessibility, and turn on bitlauncher.")
+                    }
+                }.full())
+                body.addView(Pixel.button(this, "OPEN APP INFO", accent) {
+                    try {
+                        startActivity(Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, android.net.Uri.parse("package:$packageName")))
+                    } catch (e: Exception) {
+                        Pixel.say(this, "Open Settings, then Apps, then bitlauncher.")
+                    }
+                }.full())
+            } else if (prefs.lockBlocked) {
+                body.addView(note("Your phone stopped the pixel lock screen from opening last time. Turning bitlauncher off and on again in Accessibility usually fixes this."))
             }
             body.addView(Pixel.label(this, "LOOK", 9f, Pixel.MUTED).apply { setPadding(0, Pixel.dpi(context, 12), 0, Pixel.dpi(context, 6)) })
             for (look in LockLooks.ALL) {

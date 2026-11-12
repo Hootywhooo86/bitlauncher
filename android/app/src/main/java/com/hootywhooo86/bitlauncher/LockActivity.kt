@@ -68,9 +68,13 @@ class BitApp : Application() {
         if (audio.mode == AudioManager.MODE_IN_CALL || audio.mode == AudioManager.MODE_IN_COMMUNICATION) return
         LockActivity.shownAt = 0L
         requestedAt = SystemClock.elapsedRealtime()
+        val open = Intent(this, LockActivity::class.java)
+            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_NO_ANIMATION or Intent.FLAG_ACTIVITY_SINGLE_TOP)
+        // The accessibility service is allowed to open it from the background; the app alone
+        // usually isn't (Android quietly drops the request), so try that only as a fallback.
+        if (LockService.showLock(open)) return
         try {
-            startActivity(Intent(this, LockActivity::class.java)
-                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_NO_ANIMATION or Intent.FLAG_ACTIVITY_SINGLE_TOP))
+            startActivity(open)
         } catch (e: Exception) {
             Prefs(this).lockBlocked = true
         }

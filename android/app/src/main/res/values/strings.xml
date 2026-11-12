@@ -2,5 +2,5 @@
 <resources>
     <string name="app_name">bitlauncher</string>
     <string name="settings">bitlauncher settings</string>
-    <string name="lock_service_description">Lets bitlauncher lock your screen when you double-tap empty space on the home screen. It doesn\'t read or change anything on screen.</string>
+    <string name="lock_service_description">Lets bitlauncher show its pixel lock screen when your screen turns off, and lock your screen when you double-tap empty space on home. It doesn\'t read or change anything on screen.</string>
 </resources>
