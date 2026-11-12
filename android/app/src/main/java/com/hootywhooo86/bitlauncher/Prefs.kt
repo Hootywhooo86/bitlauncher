@@ -60,7 +60,17 @@ class Prefs(context: Context) {
         get() = sp.getBoolean("lockBlocked", false)
         set(v) = sp.edit().putBoolean("lockBlocked", v).apply()
 
-    /** App ids hidden from the drawer. */
+    /** Drawer search also looks through contacts (needs the contacts permission). */
+    var searchContacts: Boolean
+        get() = sp.getBoolean("searchContacts", false)
+        set(v) = sp.edit().putBoolean("searchContacts", v).apply()
+
+    /** Double-tap empty home space to lock (needs the accessibility service turned on). */
+    var doubleTapLock: Boolean
+        get() = sp.getBoolean("doubleTapLock", false)
+        set(v) = sp.edit().putBoolean("doubleTapLock", v).apply()
+
+        /** App ids hidden from the drawer. */
     var hidden: Set<String>
         get() = sp.getStringSet("hidden", emptySet())!!.toSet()
         set(v) = sp.edit().putStringSet("hidden", v).apply()

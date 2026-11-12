@@ -108,6 +108,12 @@ class Workspace(context: Context) : ViewGroup(context) {
         fun onDrawerRelease(px: Float, velocityY: Float)
         fun onSwipeDown()
         fun onEmptyLongPress(x: Float, y: Float)
+
+        /** Double tap on empty space. */
+        fun onDoubleTap()
+
+        /** If the icon at (x, y) has a swipe-up action, return it: the swipe runs it instead of opening the drawer. */
+        fun iconSwipeAt(x: Float, y: Float): (() -> Unit)?
         fun onPageChanged(page: Int)
     }
 
@@ -122,7 +128,12 @@ class Workspace(context: Context) : ViewGroup(context) {
     private var downX = 0f
     private var downY = 0f
     private var lastX = 0f
-    private var mode = 0 // 0 none, 1 horizontal, 2 vertical
+    private var mode = 0 // 0 none, 1 horizontal, 2 vertical (drawer), 3 swipe up on an icon
+    private var iconAction: (() -> Unit)? = null
+    private var lastTapAt = 0L
+    private var lastTapX = 0f
+    private var lastTapY = 0f
+    private var moved = false
     private var longPressFired = false
     private val longPress = Runnable {
         longPressFired = true
@@ -201,6 +212,12 @@ class Workspace(context: Context) : ViewGroup(context) {
         }
     }
 
+    /** Swiping up from an icon with an action runs it; otherwise vertical swipes are the drawer and the shade. */
+    private fun verticalMode(up: Boolean): Int {
+        iconAction = if (up) listener?.iconSwipeAt(downX, downY) else null
+        return if (iconAction != null) 3 else 2
+    }
+
     override fun onInterceptTouchEvent(e: MotionEvent): Boolean {
         when (e.actionMasked) {
             MotionEvent.ACTION_DOWN -> {
@@ -218,7 +235,7 @@ class Workspace(context: Context) : ViewGroup(context) {
                 val dx = abs(e.x - downX)
                 val dy = abs(e.y - downY)
                 if (dx > slop && dx > dy) mode = 1
-                else if (dy > slop && dy > dx) mode = 2
+                else if (dy > slop && dy > dx) mode = verticalMode(e.y < downY)
                 if (mode != 0) {
                     lastX = e.x
                     return true
@@ -239,12 +256,14 @@ class Workspace(context: Context) : ViewGroup(context) {
                 longPressFired = false
                 if (mode == 0) postDelayed(longPress, ViewConfiguration.getLongPressTimeout().toLong())
                 scroller.forceFinished(true)
+                moved = false
             }
             MotionEvent.ACTION_MOVE -> {
                 val dx = abs(e.x - downX)
                 val dy = abs(e.y - downY)
+                if (dx > slop || dy > slop) moved = true
                 if (mode == 0) {
-                    if (dx > slop && dx > dy) mode = 1 else if (dy > slop && dy > dx) mode = 2
+                    if (dx > slop && dx > dy) mode = 1 else if (dy > slop && dy > dx) mode = verticalMode(e.y < downY)
                     if (mode != 0) removeCallbacks(longPress)
                 }
                 if (mode == 1) {
@@ -275,6 +294,21 @@ class Workspace(context: Context) : ViewGroup(context) {
                     val dy = e.y - downY
                     if (dy < 0) listener?.onDrawerRelease(-dy, if (e.actionMasked == MotionEvent.ACTION_UP) vy else 0f)
                     else if (e.actionMasked == MotionEvent.ACTION_UP && (dy > slop * 3 || vy > minFling)) listener?.onSwipeDown()
+                } else if (mode == 3) {
+                    if (e.actionMasked == MotionEvent.ACTION_UP && (e.y - downY < -slop * 3 || vy < -minFling)) iconAction?.invoke()
+                } else if (e.actionMasked == MotionEvent.ACTION_UP && !moved && !longPressFired) {
+                    // A tap on empty space: two close together is a double tap.
+                    val now = android.os.SystemClock.uptimeMillis()
+                    if (now - lastTapAt < ViewConfiguration.getDoubleTapTimeout() &&
+                        abs(e.x - lastTapX) < slop * 4 && abs(e.y - lastTapY) < slop * 4
+                    ) {
+                        lastTapAt = 0L
+                        listener?.onDoubleTap()
+                    } else {
+                        lastTapAt = now
+                        lastTapX = e.x
+                        lastTapY = e.y
+                    }
                 }
                 mode = 0
                 v?.recycle()

@@ -193,6 +193,9 @@ class LauncherActivity : Activity() {
             override fun onPageChanged(page: Int) {
                 dots.current = page / workspace.panes
             }
+
+            override fun onDoubleTap() = doubleTap()
+            override fun iconSwipeAt(x: Float, y: Float) = swipeActionAt(x, y)
         }
         root.addView(workspace, FrameLayout.LayoutParams(-1, -1))
 
@@ -241,6 +244,11 @@ class LauncherActivity : Activity() {
         drawer = DrawerView(this) { view, entry -> bindIcon(view, entry.key, Source.DRAWER) }
         drawer.visibility = View.GONE
         drawer.onOpenFirst = { launch(it.key, null) }
+        drawer.answersFor = { q, matches -> searchAnswers(q, matches) }
+        drawer.recentFor = {
+            val hidden = prefs.hidden
+            usage.recent().mapNotNull { apps.find(it) }.filter { it.key.id() !in hidden }
+        }
         // Swiping down at the top of the list pulls the drawer down with the finger.
         drawer.onPullDown = { px -> drawerAnim?.cancel(); setDrawerProgress(1f - px / drawerTravel()) }
         drawer.onPullRelease = { px, vy ->
@@ -601,6 +609,179 @@ class LauncherActivity : Activity() {
         }
     }
 
+    // ---------------------------------------------------------------- gestures
+
+    private fun doubleTap() {
+        if (!prefs.doubleTapLock) return
+        if (LockService.lock()) return
+        if (Build.VERSION.SDK_INT < 28) {
+            Pixel.say(this, "Double-tap to lock needs Android 9 or newer.")
+            return
+        }
+        Pixel.say(this, "To lock with a double tap, turn on bitlauncher in Accessibility.")
+        try {
+            startActivity(Intent(android.provider.Settings.ACTION_ACCESSIBILITY_SETTINGS))
+        } catch (e: Exception) {
+        }
+    }
+
+    /** The swipe-up action of the home icon under (x, y) in the workspace, if it has one. */
+    private fun swipeActionAt(x: Float, y: Float): (() -> Unit)? {
+        val wsLoc = IntArray(2)
+        workspace.getLocationInWindow(wsLoc)
+        val loc = IntArray(2)
+        for (i in workspace.visiblePages()) {
+            val page = workspace.page(i) ?: continue
+            for (j in 0 until page.childCount) {
+                val v = page.getChildAt(j) as? AppIconView ?: continue
+                v.getLocationInWindow(loc)
+                val left = loc[0] - wsLoc[0]
+                val top = loc[1] - wsLoc[1]
+                if (x < left || x > left + v.width || y < top || y > top + v.height) continue
+                val folder = v.tagItem as? FolderItem
+                if (folder != null) return folder.apps.firstOrNull()?.let { first -> { launch(first, v) } }
+                val item = layout.pages.getOrNull(i)?.firstOrNull { it is AppItem && it.app == v.tagItem } as? AppItem
+                val shortcut = item?.swipe ?: return null
+                return { runShortcut(item.app, shortcut) }
+            }
+        }
+        return null
+    }
+
+    private fun shortcutsOf(key: AppKey): List<android.content.pm.ShortcutInfo> = try {
+        val user = apps.userFor(key)
+        if (user == null || !apps.launcher.hasShortcutHostPermission()) emptyList()
+        else apps.launcher.getShortcuts(
+            LauncherApps.ShortcutQuery().setPackage(key.pkg).setActivity(apps.component(key))
+                .setQueryFlags(LauncherApps.ShortcutQuery.FLAG_MATCH_DYNAMIC or LauncherApps.ShortcutQuery.FLAG_MATCH_MANIFEST),
+            user,
+        )?.filter { it.isEnabled } ?: emptyList()
+    } catch (e: Exception) {
+        emptyList()
+    }
+
+    private fun runShortcut(key: AppKey, id: String) {
+        val sc = shortcutsOf(key).firstOrNull { it.id == id }
+        if (sc == null) {
+            Pixel.say(this, "${apps.label(key)} no longer offers that shortcut. Pick another in its menu.")
+            return
+        }
+        try {
+            apps.launcher.startShortcut(sc, null, null)
+        } catch (e: Exception) {
+            Pixel.say(this, "That shortcut couldn't be opened.")
+        }
+    }
+
+    private fun showSwipeMenu(view: AppIconView, item: AppItem) {
+        val shortcuts = shortcutsOf(item.app)
+        if (shortcuts.isEmpty()) {
+            Pixel.say(this, if (apps.launcher.hasShortcutHostPermission()) "${apps.label(item.app)} doesn't offer shortcuts to swipe to."
+            else "Set bitlauncher as your home app first; Android only shares app shortcuts with it.")
+            return
+        }
+        val entries = mutableListOf(PixelMenu.Entry(if (item.swipe == null) "None (opens drawer) *" else "None (opens drawer)") {
+            item.swipe = null
+            save()
+        })
+        for (sc in shortcuts.take(6)) {
+            val name = (sc.shortLabel ?: sc.id).toString()
+            entries += PixelMenu.Entry(if (item.swipe == sc.id) "$name *" else name) {
+                item.swipe = sc.id
+                save()
+                Pixel.say(this, "Swipe up on ${apps.label(item.app)} now runs $name.")
+            }
+        }
+        menu.show(view, entries, view.iconRect())
+    }
+
+    // ---------------------------------------------------------------- search
+
+    /** Everything search can do besides open apps, best first. */
+    private fun searchAnswers(q: String, appMatches: Int): List<DrawerView.Answer> {
+        val out = mutableListOf<DrawerView.Answer>()
+        Search.calculate(q)?.let { out += DrawerView.Answer("= $it", "Calculator  ·  tap to copy") { copy(it) } }
+        Search.convert(q)?.let { out += DrawerView.Answer("= $it", "Conversion  ·  tap to copy") { copy(it.substringBefore(' ')) } }
+        out += contactAnswers(q)
+        for (page in Search.settings(q)) out += DrawerView.Answer(page.label, "Phone settings") {
+            try {
+                startActivity(Intent(page.action))
+                closeDrawer()
+            } catch (e: Exception) {
+                Pixel.say(this, "This phone doesn't have a ${page.label} settings page.")
+            }
+        }
+        // The web is the fallback: only offered when few apps match, so app names stay tidy.
+        if (appMatches < 3 && q.length >= 2) out += webAnswer(q)
+        return out
+    }
+
+    private fun copy(text: String) {
+        val clipboard = getSystemService(android.content.ClipboardManager::class.java)
+        clipboard.setPrimaryClip(android.content.ClipData.newPlainText("bitlauncher", text))
+        Pixel.say(this, "Copied $text")
+    }
+
+    private fun contactAnswers(q: String): List<DrawerView.Answer> {
+        if (!prefs.searchContacts || q.length < 2) return emptyList()
+        if (checkSelfPermission(android.Manifest.permission.READ_CONTACTS) != PackageManager.PERMISSION_GRANTED) return emptyList()
+        val out = mutableListOf<DrawerView.Answer>()
+        try {
+            val uri = Uri.withAppendedPath(android.provider.ContactsContract.Contacts.CONTENT_FILTER_URI, Uri.encode(q))
+            val cols = arrayOf(
+                android.provider.ContactsContract.Contacts._ID,
+                android.provider.ContactsContract.Contacts.LOOKUP_KEY,
+                android.provider.ContactsContract.Contacts.DISPLAY_NAME_PRIMARY,
+            )
+            contentResolver.query(uri, cols, null, null, null)?.use { c ->
+                while (c.moveToNext() && out.size < 3) {
+                    val lookup = android.provider.ContactsContract.Contacts.getLookupUri(c.getLong(0), c.getString(1))
+                    val name = c.getString(2) ?: continue
+                    out += DrawerView.Answer(name, "Contact") {
+                        try {
+                            startActivity(Intent(Intent.ACTION_VIEW, lookup))
+                            closeDrawer()
+                        } catch (e: Exception) {
+                            Pixel.say(this, "No contacts app found to open $name.")
+                        }
+                    }
+                }
+            }
+        } catch (e: Exception) {
+            // Contacts unavailable right now; search still works for everything else.
+        }
+        return out
+    }
+
+    /** Search the web, in Bit Browser if it's installed, otherwise the phone's usual search. */
+    private fun webAnswer(q: String): DrawerView.Answer {
+        val bitBrowser = "com.pixelbrowser.app"
+        val hasBit = try {
+            packageManager.getPackageInfo(bitBrowser, 0)
+            true
+        } catch (e: Exception) {
+            false
+        }
+        return DrawerView.Answer("Search the web for \"$q\"", if (hasBit) "Bit Browser" else "Web") {
+            val url = Uri.parse("https://duckduckgo.com/?q=" + Uri.encode(q))
+            val tries = buildList {
+                if (hasBit) {
+                    add(Intent(Intent.ACTION_WEB_SEARCH).putExtra(android.app.SearchManager.QUERY, q).setPackage(bitBrowser))
+                    add(Intent(Intent.ACTION_VIEW, url).setPackage(bitBrowser))
+                }
+                add(Intent(Intent.ACTION_WEB_SEARCH).putExtra(android.app.SearchManager.QUERY, q))
+                add(Intent(Intent.ACTION_VIEW, url))
+            }
+            val intent = tries.firstOrNull { it.resolveActivity(packageManager) != null }
+            if (intent == null) {
+                Pixel.say(this, "No browser found to search the web.")
+            } else {
+                startActivity(intent)
+                closeDrawer()
+            }
+        }
+    }
+
     // ---------------------------------------------------------------- drawer and folders
 
     private var drawerAnim: android.animation.ValueAnimator? = null
@@ -788,6 +969,12 @@ class LauncherActivity : Activity() {
                     Pixel.say(this, "${apps.label(key)} hidden. Show it again in Settings.")
                 }
             }
+            Source.HOME -> entries += PixelMenu.Entry("Swipe up action") {
+                (item as? AppItem)?.let { showSwipeMenu(view, it) }
+            }
+            else -> {}
+        }
+        when (source) {
             Source.HOME -> entries += PixelMenu.Entry("Remove from home") {
                 item?.let { layout.remove(it) }
                 save()
@@ -805,6 +992,7 @@ class LauncherActivity : Activity() {
                 folder?.cover = key
                 saveAndRebuild()
             }
+            Source.DRAWER -> {}
         }
         if (source == Source.FOLDER) {
             entries += PixelMenu.Entry("Remove from folder") {

@@ -32,8 +32,21 @@ fun searchable(s: String): String =
  * keyboard's Go opens the first match. Swipe down at the top of the list to close.
  */
 class DrawerView(context: Context, private val bind: (AppIconView, AppEntry) -> Unit) : FrameLayout(context) {
+    /** Something search can do besides open an app: a sum, a conversion, a setting, a contact, the web. */
+    class Answer(val title: String, val detail: String, val action: () -> Unit)
+
+    /** Answers for what's typed (the activity knows about contacts, settings and the web). */
+    var answersFor: ((query: String, appMatches: Int) -> List<Answer>)? = null
+
+    /** The apps opened most recently from bitlauncher, newest first. */
+    var recentFor: (() -> List<AppEntry>)? = null
+
     val search: EditText
     private val grid: GridView
+    private val answers: LinearLayout
+    private val recentBox: LinearLayout
+    private val recentRow: LinearLayout
+    private var firstAnswer: Answer? = null
     private val empty: TextView
     private var all: List<AppEntry> = emptyList()
     private var shown: List<AppEntry> = emptyList()
@@ -78,7 +91,10 @@ class DrawerView(context: Context, private val bind: (AppIconView, AppEntry) -> 
             setPadding(p, p, p, p)
             setOnEditorActionListener { _, action, event ->
                 val go = action == EditorInfo.IME_ACTION_GO || (event?.keyCode == KeyEvent.KEYCODE_ENTER && event.action == KeyEvent.ACTION_DOWN)
-                if (go) shown.firstOrNull()?.let { onOpenFirst?.invoke(it) }
+                if (go) {
+                    val app = shown.firstOrNull()
+                    if (app != null) onOpenFirst?.invoke(app) else firstAnswer?.action?.invoke()
+                }
                 go
             }
             addTextChangedListener(object : TextWatcher {
@@ -91,6 +107,30 @@ class DrawerView(context: Context, private val bind: (AppIconView, AppEntry) -> 
             val m = Pixel.dpi(context, 14)
             setMargins(m, m, m, m / 2)
         })
+        answers = LinearLayout(context).apply {
+            orientation = LinearLayout.VERTICAL
+            visibility = GONE
+        }
+        column.addView(answers, LinearLayout.LayoutParams(-1, -2).apply {
+            val m = Pixel.dpi(context, 14)
+            setMargins(m, 0, m, 0)
+        })
+        recentRow = LinearLayout(context)
+        recentBox = LinearLayout(context).apply {
+            orientation = LinearLayout.VERTICAL
+            visibility = GONE
+            addView(Pixel.label(context, "RECENT", 9f, Pixel.MUTED).apply {
+                setPadding(Pixel.dpi(context, 18), Pixel.dpi(context, 4), 0, 0)
+            })
+            addView(recentRow)
+            // A thin rule between recent and A-Z.
+            addView(View(context).apply { setBackgroundColor(withAlpha(Pixel.MUTED, 50)) },
+                LinearLayout.LayoutParams(-1, Pixel.dpi(context, 1)).apply {
+                    val m = Pixel.dpi(context, 18)
+                    setMargins(m, Pixel.dpi(context, 2), m, Pixel.dpi(context, 6))
+                })
+        }
+        column.addView(recentBox, LinearLayout.LayoutParams(-1, -2))
         grid = GridView(context).apply {
             adapter = this@DrawerView.adapter
             stretchMode = GridView.STRETCH_COLUMN_WIDTH
@@ -126,14 +166,59 @@ class DrawerView(context: Context, private val bind: (AppIconView, AppEntry) -> 
     fun refresh() = adapter.notifyDataSetChanged()
 
     private fun filter() {
-        val q = searchable(search.text.toString().trim())
+        val raw = search.text.toString().trim()
+        val q = searchable(raw)
         shown = if (q.isEmpty()) all else {
             val matches = all.filter { searchable(it.label).contains(q) }
             // Names that start with what you typed come first.
             matches.sortedBy { if (searchable(it.label).startsWith(q)) 0 else 1 }
         }
-        empty.visibility = if (shown.isEmpty() && all.isNotEmpty()) VISIBLE else GONE
+        showAnswers(if (raw.isEmpty()) emptyList() else answersFor?.invoke(raw, shown.size).orEmpty())
+        showRecent(if (raw.isEmpty()) recentFor?.invoke().orEmpty() else emptyList())
+        empty.visibility = if (shown.isEmpty() && all.isNotEmpty() && firstAnswer == null) VISIBLE else GONE
         adapter.notifyDataSetChanged()
+    }
+
+    private fun showAnswers(list: List<Answer>) {
+        answers.removeAllViews()
+        firstAnswer = list.firstOrNull()
+        answers.visibility = if (list.isEmpty()) GONE else VISIBLE
+        for (a in list.take(6)) {
+            answers.addView(LinearLayout(context).apply {
+                orientation = LinearLayout.VERTICAL
+                background = PanelDrawable(context, Pixel.PANEL, withAlpha(Pixel.MUTED, 120))
+                val p = Pixel.dpi(context, 12)
+                setPadding(p, p - Pixel.dpi(context, 2), p + Pixel.dpi(context, 2), p)
+                isClickable = true
+                foreground = context.getDrawable(android.R.drawable.list_selector_background)
+                setOnClickListener {
+                    hideKeyboard()
+                    a.action()
+                }
+                addView(TextView(context).apply {
+                    text = a.title
+                    setTextColor(Pixel.INK)
+                    textSize = 16f
+                    maxLines = 1
+                    ellipsize = android.text.TextUtils.TruncateAt.END
+                })
+                addView(Pixel.label(context, a.detail.uppercase(), 9f, Pixel.MUTED).apply {
+                    setPadding(0, Pixel.dpi(context, 4), 0, 0)
+                })
+            }, LinearLayout.LayoutParams(-1, -2).apply { bottomMargin = Pixel.dpi(context, 6) })
+        }
+    }
+
+    private fun showRecent(list: List<AppEntry>) {
+        recentRow.removeAllViews()
+        val cols = grid.numColumns.coerceAtLeast(1)
+        recentBox.visibility = if (list.isEmpty()) GONE else VISIBLE
+        list.take(cols).forEach { entry ->
+            val v = AppIconView(context)
+            bind(v, entry)
+            recentRow.addView(v, LinearLayout.LayoutParams(0, cellHeight, 1f))
+        }
+        repeat(cols - minOf(cols, list.size)) { recentRow.addView(View(context), LinearLayout.LayoutParams(0, cellHeight, 1f)) }
     }
 
     fun reset() {

@@ -105,11 +105,40 @@ class SettingsActivity : Activity() {
             choice("OFF", !prefs.animations) { changed { prefs.animations = false } },
         ))
 
+        section("GESTURES")
+        body.addView(note("Swipe up on a folder to open its first app. Swipe up on an app to run a shortcut you pick (hold the app, then Swipe up action)."))
+        body.addView(Pixel.label(this, "DOUBLE-TAP TO LOCK", 9f, Pixel.MUTED).apply { setPadding(0, Pixel.dpi(context, 8), 0, Pixel.dpi(context, 6)) })
+        row(listOf(
+            choice("ON", prefs.doubleTapLock) { changed { prefs.doubleTapLock = true } },
+            choice("OFF", !prefs.doubleTapLock) { changed { prefs.doubleTapLock = false } },
+        ))
+        if (prefs.doubleTapLock && !LockService.isEnabled(this)) {
+            body.addView(note("One more step: turn on bitlauncher in Accessibility. It's only used to lock the screen, and keeps fingerprint unlock working."))
+            body.addView(Pixel.button(this, "OPEN ACCESSIBILITY", accent) {
+                try {
+                    startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
+                } catch (e: Exception) {
+                    Pixel.say(this, "Open your phone's Settings, then Accessibility, and turn on bitlauncher.")
+                }
+            }.full())
+        }
+
         notificationSection(accent)
 
         section("APP DRAWER")
         row(listOf(
             choice("KEYBOARD ON OPEN", prefs.drawerKeyboard) { changed { prefs.drawerKeyboard = !prefs.drawerKeyboard } },
+        ))
+        body.addView(note("Search also does sums (12*8), conversions (5 km to mi), phone settings and the web."))
+        row(listOf(
+            choice("SEARCH CONTACTS", prefs.searchContacts) {
+                if (prefs.searchContacts) changed { prefs.searchContacts = false }
+                else if (checkSelfPermission(android.Manifest.permission.READ_CONTACTS) == android.content.pm.PackageManager.PERMISSION_GRANTED) {
+                    changed { prefs.searchContacts = true }
+                } else {
+                    requestPermissions(arrayOf(android.Manifest.permission.READ_CONTACTS), REQ_CONTACTS)
+                }
+            },
         ))
 
         val hidden = prefs.hidden
@@ -324,7 +353,16 @@ class SettingsActivity : Activity() {
         ""
     }
 
+    override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, grantResults: IntArray) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults)
+        if (requestCode != REQ_CONTACTS) return
+        val granted = grantResults.firstOrNull() == android.content.pm.PackageManager.PERMISSION_GRANTED
+        if (granted) changed { prefs.searchContacts = true }
+        else Pixel.say(this, "Contact search stays off: bitlauncher wasn't allowed to read contacts.")
+    }
+
     companion object {
+        private const val REQ_CONTACTS = 24
         private const val REQ_HOME = 21
         private const val REQ_BACKUP = 22
         private const val REQ_RESTORE = 23

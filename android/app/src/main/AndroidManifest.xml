@@ -5,6 +5,8 @@
     <uses-permission android:name="android.permission.EXPAND_STATUS_BAR" />
     <!-- Uninstall from the long-press menu. -->
     <uses-permission android:name="android.permission.REQUEST_DELETE_PACKAGES" />
+    <!-- Only if you turn on contact search in Settings; asked for then, not before. -->
+    <uses-permission android:name="android.permission.READ_CONTACTS" />
     <!-- A launcher has to see every app it can launch. -->
     <uses-permission android:name="android.permission.QUERY_ALL_PACKAGES" />
 
@@ -57,6 +59,20 @@
             <intent-filter>
                 <action android:name="android.service.notification.NotificationListenerService" />
             </intent-filter>
+        </service>
+
+        <!-- Double-tap to lock. Turned on by the user in Accessibility settings, off otherwise. -->
+        <service
+            android:name=".LockService"
+            android:exported="true"
+            android:label="@string/app_name"
+            android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE">
+            <intent-filter>
+                <action android:name="android.accessibilityservice.AccessibilityService" />
+            </intent-filter>
+            <meta-data
+                android:name="android.accessibilityservice"
+                android:resource="@xml/lock_service" />
         </service>
 
         <activity

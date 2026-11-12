@@ -112,6 +112,20 @@ class LauncherSmokeTest {
         assertEquals(View.GONE, drawer.visibility)
     }
 
+    @Test
+    fun drawerSearchAnswersSumsSettingsAndTheWeb() {
+        val activity = Robolectric.buildActivity(LauncherActivity::class.java).setup().get()
+        idle()
+        val drawer = findDrawer(activity.window.decorView)!!
+        drawer.search.setText("12*8")
+        idle()
+        assertTrue(hasVisibleText(drawer, "= 96"))
+        drawer.search.setText("wifi")
+        idle()
+        assertTrue(hasVisibleText(drawer, "Wi-Fi"))
+        assertTrue(hasVisibleText(drawer, "Search the web for"))
+    }
+
     private fun findDrawer(v: View): DrawerView? {
         if (v is DrawerView) return v
         if (v is android.view.ViewGroup) for (i in 0 until v.childCount) findDrawer(v.getChildAt(i))?.let { return it }
