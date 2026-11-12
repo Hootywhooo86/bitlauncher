@@ -119,6 +119,9 @@ class Workspace(context: Context) : ViewGroup(context) {
         /** Two fingers pinching inward: show all pages. */
         fun onPinchIn()
 
+        /** If a widget stack is at (x, y), return how to flip it (+1 next, -1 previous). */
+        fun stackAt(x: Float, y: Float): ((Int) -> Unit)?
+
         /** If the icon at (x, y) has a swipe-up action, return it: the swipe runs it instead of opening the drawer. */
         fun iconSwipeAt(x: Float, y: Float): (() -> Unit)?
         fun onPageChanged(page: Int)
@@ -149,6 +152,7 @@ class Workspace(context: Context) : ViewGroup(context) {
     })
     private var mode = 0 // 0 none, 1 pages, 2 vertical (drawer), 3 swipe up on an icon, 4 Today
     private var iconAction: (() -> Unit)? = null
+    private var stackFlip: ((Int) -> Unit)? = null
     private var lastTapAt = 0L
     private var lastTapX = 0f
     private var lastTapY = 0f
@@ -244,6 +248,9 @@ class Workspace(context: Context) : ViewGroup(context) {
 
     /** Swiping up from an icon with an action runs it; otherwise vertical swipes are the drawer and the shade. */
     private fun verticalMode(up: Boolean): Int {
+        // A swipe that starts on a widget stack flips the stack.
+        stackFlip = listener?.stackAt(downX, downY)
+        if (stackFlip != null) return 6
         iconAction = if (up) listener?.iconSwipeAt(downX, downY) else null
         return if (iconAction != null) 3 else 2
     }
@@ -351,6 +358,9 @@ class Workspace(context: Context) : ViewGroup(context) {
                     else if (e.actionMasked == MotionEvent.ACTION_UP && (dy > slop * 3 || vy > minFling)) listener?.onSwipeDown()
                 } else if (mode == 4) {
                     listener?.onTodayRelease((e.x - downX).coerceAtLeast(0f), if (e.actionMasked == MotionEvent.ACTION_UP) vx else 0f)
+                } else if (mode == 6) {
+                    val dy = e.y - downY
+                    if (e.actionMasked == MotionEvent.ACTION_UP && (abs(dy) > slop * 2 || abs(vy) > minFling)) stackFlip?.invoke(if (dy < 0) 1 else -1)
                 } else if (mode == 3) {
                     if (e.actionMasked == MotionEvent.ACTION_UP && (e.y - downY < -slop * 3 || vy < -minFling)) iconAction?.invoke()
                 } else if (e.actionMasked == MotionEvent.ACTION_UP && !moved && !longPressFired) {

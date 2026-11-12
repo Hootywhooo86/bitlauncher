@@ -80,7 +80,10 @@ class FolderItem(var name: String, val apps: MutableList<AppKey>, override var x
     }
 }
 
-/** A hosted Android widget. [provider] is the flattened ComponentName, kept so a restore can say what was lost. */
+/**
+ * A hosted Android widget, or a stack of them sharing one spot (swipe up and down to flip).
+ * [provider] is the flattened ComponentName, kept so a restore can say what was lost.
+ */
 class WidgetItem(
     val widgetId: Int,
     val provider: String,
@@ -92,9 +95,44 @@ class WidgetItem(
     override val spanX: Int get() = w
     override val spanY: Int get() = h
 
+    /** The other widgets stacked here, after the first. Empty for a plain widget. */
+    val more: MutableList<Pair<Int, String>> = mutableListOf()
+
+    /** Which widget of the stack is showing (0 = the first). */
+    var showing = 0
+
+    /** Every widget here, first to last: (id, provider). */
+    fun all(): List<Pair<Int, String>> = listOf(widgetId to provider) + more
+
+    val isStack: Boolean get() = more.isNotEmpty()
+
     override fun toJson(): JSONObject = JSONObject()
         .put("t", "widget").put("id", widgetId).put("provider", provider)
         .put("x", x).put("y", y).put("w", w).put("h", h)
+        .also { o ->
+            if (more.isNotEmpty()) {
+                o.put("more", JSONArray().also { a -> more.forEach { (id, p) -> a.put(JSONObject().put("id", id).put("provider", p)) } })
+                o.put("showing", showing)
+            }
+        }
+
+    /** A copy with [id] taken out of the stack (null if it was the only one). */
+    fun without(id: Int): WidgetItem? {
+        val rest = all().filter { it.first != id }
+        if (rest.isEmpty()) return null
+        return WidgetItem(rest[0].first, rest[0].second, x, y, w, h).also { copy ->
+            copy.more.addAll(rest.drop(1))
+            copy.showing = showing.coerceAtMost(rest.size - 1)
+        }
+    }
+
+    /** A copy with [id] added on top of the stack, showing it. */
+    fun with(id: Int, provider: String): WidgetItem =
+        WidgetItem(widgetId, this.provider, x, y, w, h).also { copy ->
+            copy.more.addAll(more)
+            copy.more.add(id to provider)
+            copy.showing = copy.all().size - 1
+        }
 }
 
 /**
@@ -149,6 +187,17 @@ class HomeLayout(var grid: GridSize, val pages: MutableList<MutableList<Item>>, 
             }
             page++
             if (page == pages.size) pages.add(mutableListOf())
+        }
+    }
+
+    /** Swap one item for another in place (same page, same spot). */
+    fun replace(old: Item, new: Item) {
+        for (page in pages) {
+            val i = page.indexOf(old)
+            if (i >= 0) {
+                page[i] = new
+                return
+            }
         }
     }
 
@@ -363,7 +412,12 @@ class HomeLayout(var grid: GridSize, val pages: MutableList<MutableList<Item>>, 
                     showCount = o.optBoolean("count", false)
                 }
             }
-            "widget" -> WidgetItem(o.getInt("id"), o.optString("provider"), o.getInt("x"), o.getInt("y"), o.getInt("w"), o.getInt("h"))
+            "widget" -> WidgetItem(o.getInt("id"), o.optString("provider"), o.getInt("x"), o.getInt("y"), o.getInt("w"), o.getInt("h")).apply {
+                o.optJSONArray("more")?.let { a ->
+                    for (i in 0 until a.length()) a.getJSONObject(i).let { m -> more.add(m.getInt("id") to m.optString("provider")) }
+                }
+                showing = o.optInt("showing", 0).coerceIn(0, more.size)
+            }
             else -> null
         }
     }

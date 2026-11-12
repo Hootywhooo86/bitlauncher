@@ -233,4 +233,27 @@ class LayoutTest {
         layout.removePage(0)
         assertEquals(1, layout.pages.size) // there's always a page
     }
+
+    @Test
+    fun widgetStacks() {
+        val single = WidgetItem(10, "rail/Clock", 0, 0, 4, 2)
+        assertFalse(single.isStack)
+        val stack = single.with(11, "weather/Now").with(12, "nhl/Scores")
+        assertTrue(stack.isStack)
+        assertEquals(listOf(10, 11, 12), stack.all().map { it.first })
+        assertEquals(2, stack.showing) // the newest shows
+        assertEquals(4, stack.w)
+
+        val layout = HomeLayout.empty(GridSize.MEDIUM)
+        layout.pages[0].add(stack)
+        val back = HomeLayout.fromJson(JSONObject(layout.toJson().toString())).pages[0].single() as WidgetItem
+        assertEquals(listOf(10, 11, 12), back.all().map { it.first })
+        assertEquals(2, back.showing)
+
+        // Take the first one out: the next becomes the base, the rest stay stacked.
+        val less = back.without(10)!!
+        assertEquals(listOf(11, 12), less.all().map { it.first })
+        assertEquals(1, less.showing)
+        assertEquals(null, WidgetItem(5, "a/B", 0, 0, 1, 1).without(5))
+    }
 }

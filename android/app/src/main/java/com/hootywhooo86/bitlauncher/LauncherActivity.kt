@@ -40,6 +40,8 @@ class LauncherActivity : Activity() {
     private var lastWeather: WeatherNow? = null
     private val todayWidgetViews = HashMap<Int, PixelWidgetView>()
     private var widgetForToday = false
+    /** "Stack another widget": the widget spot the next picked widget joins. */
+    private var widgetForStack: WidgetItem? = null
     private lateinit var weather: WeatherClient
     private lateinit var apps: AppList
     private lateinit var layout: HomeLayout
@@ -248,6 +250,7 @@ class LauncherActivity : Activity() {
             override fun onTodayRelease(px: Float, velocityX: Float) = releaseToday(px, velocityX)
             override fun onDoubleTap() = doubleTap()
             override fun onPinchIn() = openPages()
+            override fun stackAt(x: Float, y: Float) = stackFlipAt(x, y)
             override fun iconSwipeAt(x: Float, y: Float) = swipeActionAt(x, y)
         }
         root.addView(workspace, FrameLayout.LayoutParams(-1, -1))
@@ -432,8 +435,8 @@ class LauncherActivity : Activity() {
                     is AppItem -> AppIconView(this).also { bindIcon(it, item.app, Source.HOME, item, pageIndex = pageIndex) }
                     is FolderItem -> AppIconView(this).also { bindFolder(it, item, pageIndex) }
                     is WidgetItem -> {
-                        liveWidgets.add(item.widgetId)
-                        widgetView(item)
+                        item.all().forEach { liveWidgets.add(it.first) }
+                        if (item.isStack) stackView(item) else widgetView(item)
                     }
                 }
                 (view.parent as? ViewGroup)?.removeView(view)
@@ -747,7 +750,7 @@ class LauncherActivity : Activity() {
                     saveAndRebuild()
                 } else {
                     removing("Page ${i + 1} deleted") {
-                        layout.removePage(i).filterIsInstance<WidgetItem>().forEach { deleteWidgetLater(it.widgetId) }
+                        layout.removePage(i).filterIsInstance<WidgetItem>().forEach { w -> w.all().forEach { deleteWidgetLater(it.first) } }
                     }
                 }
                 showPages()
@@ -1843,7 +1846,7 @@ class LauncherActivity : Activity() {
                     else -> info.singleApp()?.let { "${apps.label(it)} removed" } ?: "Removed"
                 }
                 removeFromSource(info)
-                (info.item as? WidgetItem)?.let { deleteWidgetLater(it.widgetId) }
+                (info.item as? WidgetItem)?.all()?.forEach { deleteWidgetLater(it.first) }
                 return true
             }
             is DropTarget.Dock -> {
@@ -1954,32 +1957,102 @@ class LauncherActivity : Activity() {
                     menu.show(this, listOf(PixelMenu.Entry("Remove") {
                         removing("Widget removed") {
                             this@LauncherActivity.layout.remove(item)
-                            deleteWidgetLater(item.widgetId)
+                            item.all().forEach { deleteWidgetLater(it.first) }
                         }
                     }))
                     true
                 }
             }
         }
-        val view = widgetHost.createView(this, item.widgetId, info) as PixelWidgetView
+        val view = hostView(item.widgetId)!!
         view.tagItem = item
-        view.onLongPress = { showWidgetMenu(it) }
-        view.onDragOut = { v -> v.tagItem?.let { startDrag(v, DragInfo(Source.HOME, item = it, view = v)) } }
-        widgetViews[item.widgetId] = view
+        view.onLongPress = { showWidgetMenu(it, item) }
+        view.onDragOut = { v -> startDrag(v, DragInfo(Source.HOME, item = item, view = v)) }
         return view
     }
 
-    private fun showWidgetMenu(view: PixelWidgetView) {
-        val item = view.tagItem ?: return
-        menu.show(view, listOf(
+    /** The hosted view for one widget id, made once and kept. Null if its app is gone. */
+    private fun hostView(id: Int): PixelWidgetView? {
+        widgetViews[id]?.let { return it }
+        val info = widgetManager.getAppWidgetInfo(id) ?: return null
+        return (widgetHost.createView(this, id, info) as PixelWidgetView).also { widgetViews[id] = it }
+    }
+
+    /** A stack: every widget in it, one showing, flipped by swiping up and down on it. */
+    private fun stackView(item: WidgetItem): View {
+        val stack = StackView(this)
+        stack.tag = item
+        stack.accent = prefs.accent
+        val pages = item.all().map { (id, _) ->
+            val v: View = hostView(id)?.also { hv ->
+                hv.tagItem = item
+                hv.onLongPress = { showWidgetMenu(it, item, id) }
+                hv.onDragOut = { startDrag(stack, DragInfo(Source.HOME, item = item, view = stack)) }
+            } ?: Pixel.label(this, "WIDGET UNAVAILABLE\nHOLD TO REMOVE", 9f, Pixel.MUTED).apply {
+                gravity = Gravity.CENTER
+                background = PanelDrawable(context, withAlpha(Pixel.PANEL, 200), Pixel.MUTED)
+                setOnLongClickListener { showWidgetMenu(this, item, id); true }
+            }
+            (v.parent as? ViewGroup)?.removeView(v)
+            v
+        }
+        stack.setPages(pages, item.showing)
+        stack.onFlip = { i ->
+            item.showing = i
+            save()
+        }
+        return stack
+    }
+
+    /** [shownId] is the widget the finger is on (for stacks: the one showing). */
+    private fun showWidgetMenu(view: View, item: WidgetItem, shownId: Int = item.widgetId) {
+        val entries = mutableListOf(
             PixelMenu.Entry("Resize") { startResize(item) },
-            PixelMenu.Entry("Remove") {
+            PixelMenu.Entry("Stack another widget") {
+                widgetForStack = item
+                showWidgetPicker()
+            },
+        )
+        if (item.isStack) {
+            entries += PixelMenu.Entry("Remove this one") {
+                removing("Widget taken off the stack") {
+                    item.without(shownId)?.let { layout.replace(item, it) }
+                    deleteWidgetLater(shownId)
+                }
+            }
+            entries += PixelMenu.Entry("Remove whole stack") {
+                removing("Stack removed") {
+                    layout.remove(item)
+                    item.all().forEach { deleteWidgetLater(it.first) }
+                }
+            }
+        } else {
+            entries += PixelMenu.Entry("Remove") {
                 removing("Widget removed") {
                     layout.remove(item)
-                    deleteWidgetLater(item.widgetId)
+                    item.all().forEach { deleteWidgetLater(it.first) }
                 }
-            },
-        ))
+            }
+        }
+        menu.show(view, entries)
+    }
+
+    /** The stack under (x, y) in the workspace, as a way to flip it. */
+    private fun stackFlipAt(x: Float, y: Float): ((Int) -> Unit)? {
+        val wsLoc = IntArray(2)
+        workspace.getLocationInWindow(wsLoc)
+        val loc = IntArray(2)
+        for (i in workspace.visiblePages()) {
+            val page = workspace.page(i) ?: continue
+            for (j in 0 until page.childCount) {
+                val v = page.getChildAt(j) as? StackView ?: continue
+                v.getLocationInWindow(loc)
+                val left = loc[0] - wsLoc[0]
+                val top = loc[1] - wsLoc[1]
+                if (x >= left && x <= left + v.width && y >= top && y <= top + v.height) return { dir -> v.flip(dir) }
+            }
+        }
+        return null
     }
 
     private fun cellSize(): Pair<Float, Float> {
@@ -2057,6 +2130,14 @@ class LauncherActivity : Activity() {
 
     private fun placeWidget() {
         val info = pendingWidget ?: return
+        widgetForStack?.let { target ->
+            widgetForStack = null
+            layout.replace(target, target.with(pendingWidgetId, info.provider.flattenToString()))
+            pendingWidget = null
+            pendingWidgetId = -1
+            saveAndRebuild()
+            return
+        }
         if (widgetForToday) {
             widgetForToday = false
             val (_, h) = defaultCells(info)
@@ -2079,6 +2160,7 @@ class LauncherActivity : Activity() {
 
     private fun cancelWidget() {
         widgetForToday = false
+        widgetForStack = null
         if (pendingWidgetId != -1) widgetHost.deleteAppWidgetId(pendingWidgetId)
         pendingWidget = null
         pendingWidgetId = -1
