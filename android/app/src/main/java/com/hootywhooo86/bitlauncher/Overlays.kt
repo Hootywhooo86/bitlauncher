@@ -190,12 +190,17 @@ class DrawerView(context: Context, private val bind: (AppIconView, AppEntry) -> 
     }
 }
 
-/** An open folder: a panel with an editable name and its apps. Tap outside to close. */
+/**
+ * An open folder: a panel with an editable name and its apps. Tap outside to close.
+ * Big folders scroll; apps can be dragged around inside it (see [indexAt]).
+ */
 class FolderView(context: Context) : FrameLayout(context) {
     val title: EditText
     val grid: LinearLayout
     private val panel: LinearLayout
+    private val scroll: android.widget.ScrollView
     var onClose: (() -> Unit)? = null
+    private var columns = 4
 
     init {
         setBackgroundColor(withAlpha(Pixel.BG, 170))
@@ -219,23 +224,89 @@ class FolderView(context: Context) : FrameLayout(context) {
         }
         panel.addView(title)
         grid = LinearLayout(context).apply { orientation = LinearLayout.VERTICAL }
-        panel.addView(grid)
+        scroll = object : android.widget.ScrollView(context) {
+            // Never taller than 70% of the screen; a big folder scrolls instead.
+            override fun onMeasure(widthMeasureSpec: Int, heightMeasureSpec: Int) {
+                val max = (resources.displayMetrics.heightPixels * 0.7f).toInt()
+                super.onMeasure(widthMeasureSpec, MeasureSpec.makeMeasureSpec(max, MeasureSpec.AT_MOST))
+            }
+        }.apply {
+            isVerticalScrollBarEnabled = false
+            overScrollMode = View.OVER_SCROLL_NEVER
+            addView(grid)
+        }
+        panel.addView(scroll)
         addView(panel, LayoutParams(Pixel.dpi(context, 300), LayoutParams.WRAP_CONTENT, Gravity.CENTER))
     }
 
-    fun setAccent(accent: Int) {
-        panel.background = PanelDrawable(context, Pixel.PANEL, accent)
+    fun setAccent(accent: Int, tint: Int? = null) {
+        panel.background = PanelDrawable(context, if (tint != null) blend(Pixel.PANEL, tint, 0.18f) else Pixel.PANEL, tint ?: accent)
     }
 
-    /** Lay [icons] out four to a row. */
+    /** Lay [icons] out in rows: four across, five once the folder is big. */
     fun setIcons(icons: List<View>, cellHeight: Int) {
+        columns = if (icons.size > 16) 5 else 4
+        (panel.layoutParams as LayoutParams).width = Pixel.dpi(context, if (columns == 5) 360 else 300)
         grid.removeAllViews()
-        icons.chunked(4).forEach { rowIcons ->
+        icons.chunked(columns).forEach { rowIcons ->
             val row = LinearLayout(context)
             rowIcons.forEach { row.addView(it, LinearLayout.LayoutParams(0, cellHeight, 1f)) }
-            repeat(4 - rowIcons.size) { row.addView(View(context), LinearLayout.LayoutParams(0, cellHeight, 1f)) }
+            repeat(columns - rowIcons.size) { row.addView(View(context), LinearLayout.LayoutParams(0, cellHeight, 1f)) }
             grid.addView(row)
         }
+        panel.requestLayout()
+    }
+
+    /** True if a point (in this view's coordinates) is on the panel rather than the dim around it. */
+    fun panelContains(x: Float, y: Float): Boolean =
+        x >= panel.left && x <= panel.right && y >= panel.top && y <= panel.bottom
+
+    /**
+     * The slot nearest a point (in this view's coordinates), for dragging apps around inside.
+     * Near the top or bottom edge of a long folder it also scrolls.
+     */
+    fun indexAt(x: Float, y: Float): Int {
+        val icons = icons()
+        if (icons.isEmpty()) return 0
+        val edge = Pixel.dp(context, 40f)
+        val scrollTop = panel.top + scroll.top
+        if (y < scrollTop + edge) scroll.smoothScrollBy(0, -Pixel.dpi(context, 24))
+        else if (y > scrollTop + scroll.height - edge) scroll.smoothScrollBy(0, Pixel.dpi(context, 24))
+        val me = IntArray(2)
+        getLocationInWindow(me)
+        val loc = IntArray(2)
+        return icons.indices.minBy { i ->
+            val v = icons[i]
+            v.getLocationInWindow(loc)
+            val cx = loc[0] - me[0] + v.width / 2f
+            val cy = loc[1] - me[1] + v.height / 2f
+            (cx - x) * (cx - x) + (cy - y) * (cy - y)
+        }
+    }
+
+    /** Where each icon is on screen now, so a re-order can glide them from there. */
+    fun positions(): Map<Any?, Pair<Int, Int>> {
+        val loc = IntArray(2)
+        return icons().associate { v -> v.getLocationInWindow(loc); v.tagItem to (loc[0] to loc[1]) }
+    }
+
+    /** After the icons are re-laid, slide each from where it was to where it is. */
+    fun glideFrom(before: Map<Any?, Pair<Int, Int>>) {
+        if (!Pixel.motion(context)) return
+        grid.viewTreeObserver.addOnPreDrawListener(object : android.view.ViewTreeObserver.OnPreDrawListener {
+            override fun onPreDraw(): Boolean {
+                grid.viewTreeObserver.removeOnPreDrawListener(this)
+                val loc = IntArray(2)
+                for (v in icons()) {
+                    val old = before[v.tagItem] ?: continue
+                    v.getLocationInWindow(loc)
+                    v.translationX = (old.first - loc[0]).toFloat()
+                    v.translationY = (old.second - loc[1]).toFloat()
+                    v.animate().translationX(0f).translationY(0f).setDuration(220).setInterpolator(Ease.move).start()
+                }
+                return true
+            }
+        })
     }
 
     /** The panel grows out of nothing and the dim fades in. */

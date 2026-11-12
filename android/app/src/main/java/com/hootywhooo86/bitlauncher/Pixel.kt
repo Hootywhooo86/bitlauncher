@@ -118,6 +118,13 @@ class PanelDrawable(context: Context, var fill: Int, var border: Int, private va
     override fun getOpacity(): Int = PixelFormat.TRANSLUCENT
 }
 
+/** Mix [b] into [a] by [t] (0 = all a, 1 = all b). */
+fun blend(a: Int, b: Int, t: Float): Int = Color.rgb(
+    (Color.red(a) + (Color.red(b) - Color.red(a)) * t).toInt(),
+    (Color.green(a) + (Color.green(b) - Color.green(a)) * t).toInt(),
+    (Color.blue(a) + (Color.blue(b) - Color.blue(a)) * t).toInt(),
+)
+
 fun withAlpha(color: Int, alpha: Int): Int = Color.argb(alpha, Color.red(color), Color.green(color), Color.blue(color))
 
 /**

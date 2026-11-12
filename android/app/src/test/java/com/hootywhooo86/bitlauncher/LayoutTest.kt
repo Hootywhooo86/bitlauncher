@@ -120,4 +120,39 @@ class LayoutTest {
         assertTrue(layout.pages[0].isEmpty())
         assertEquals(4, layout.dock.size)
     }
+
+    @Test
+    fun foldersReorderAndKeepTheirLook() {
+        val folder = FolderItem("Food", mutableListOf(app(1), app(2), app(3), app(4)), 0, 0)
+        folder.move(3, 0) // drag the last app to the front
+        assertEquals(listOf(app(4), app(1), app(2), app(3)), folder.apps)
+        folder.move(0, 9) // past the end lands last
+        assertEquals(app(4), folder.apps.last())
+        folder.cover = app(2)
+        folder.color = 0xFF2DD4BF.toInt()
+        folder.labels = false
+
+        val layout = HomeLayout.empty(GridSize.MEDIUM)
+        layout.pages[0].add(folder)
+        layout.pages[0].add(AppItem(app(9), 1, 0).apply { swipe = "compose" })
+        layout.unlabelledPages.add(0)
+        val back = HomeLayout.fromJson(JSONObject(layout.toJson().toString()))
+        val f = back.pages[0].filterIsInstance<FolderItem>().single()
+        assertEquals(folder.apps, f.apps)
+        assertEquals(app(2), f.cover)
+        assertEquals(0xFF2DD4BF.toInt(), f.color)
+        assertFalse(f.labels)
+        assertEquals("compose", back.pages[0].filterIsInstance<AppItem>().single().swipe)
+        assertTrue(0 in back.unlabelledPages)
+    }
+
+    @Test
+    fun uninstallingACoverAppClearsTheCover() {
+        val layout = HomeLayout.empty(GridSize.MEDIUM)
+        val folder = FolderItem("F", mutableListOf(app(1), app(2), app(3)), 0, 0).apply { cover = app(3) }
+        layout.pages[0].add(folder)
+        layout.removeApps { it == app(3) }
+        assertNull(folder.cover)
+        assertEquals(listOf(app(1), app(2)), folder.apps)
+    }
 }

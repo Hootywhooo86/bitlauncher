@@ -27,6 +27,7 @@ class LauncherActivity : Activity() {
     private lateinit var prefs: Prefs
     private lateinit var store: LayoutStore
     private lateinit var icons: IconCache
+    private lateinit var usage: Usage
     private lateinit var apps: AppList
     private lateinit var layout: HomeLayout
 
@@ -63,6 +64,7 @@ class LauncherActivity : Activity() {
         prefs = Prefs(this)
         store = LayoutStore(this)
         icons = IconCache(this)
+        usage = Usage(this)
         firstRun = store.isFirstRun()
         layout = store.load(prefs.grid)
         widgetManager = AppWidgetManager.getInstance(this)
@@ -342,8 +344,8 @@ class LauncherActivity : Activity() {
             val page = CellLayout(this, layout.cols(), layout.rows())
             for (item in items) {
                 val view: View = when (item) {
-                    is AppItem -> AppIconView(this).also { bindIcon(it, item.app, Source.HOME, item) }
-                    is FolderItem -> AppIconView(this).also { bindFolder(it, item) }
+                    is AppItem -> AppIconView(this).also { bindIcon(it, item.app, Source.HOME, item, pageIndex = pageIndex) }
+                    is FolderItem -> AppIconView(this).also { bindFolder(it, item, pageIndex) }
                     is WidgetItem -> {
                         liveWidgets.add(item.widgetId)
                         widgetView(item)
@@ -477,13 +479,26 @@ class LauncherActivity : Activity() {
         val size: Pair<Int, Int> get() = (item?.spanX ?: 1) to (item?.spanY ?: 1)
     }
 
-    private fun bindIcon(view: AppIconView, key: AppKey, source: Source, item: Item? = null, folder: FolderItem? = null, dockIndex: Int = -1) {
+    private fun bindIcon(
+        view: AppIconView,
+        key: AppKey,
+        source: Source,
+        item: Item? = null,
+        folder: FolderItem? = null,
+        dockIndex: Int = -1,
+        pageIndex: Int = -1,
+    ) {
         view.tagItem = key
         view.sprite = icons.get(key)
         view.folderSprites = null
         view.hasDot = false
         view.label = apps.label(key)
-        view.showLabel = prefs.labels && source != Source.DOCK
+        view.showLabel = prefs.labels && when (source) {
+            Source.DOCK -> false
+            Source.HOME -> pageIndex !in layout.unlabelledPages
+            Source.FOLDER -> folder?.labels != false
+            Source.DRAWER -> true
+        }
         view.iconSizeDp = prefs.iconDp()
         view.accent = prefs.accent
         view.setOnClickListener { launch(key, view) }
@@ -495,27 +510,74 @@ class LauncherActivity : Activity() {
         view.invalidate()
     }
 
-    private fun bindFolder(view: AppIconView, folder: FolderItem) {
+    private fun bindFolder(view: AppIconView, folder: FolderItem, pageIndex: Int) {
         view.tagItem = folder
         view.sprite = null
         view.folderSprites = folder.apps.take(4).map { icons.get(it) }
+        view.folderCover = folder.cover?.let { icons.get(it) }
+        view.folderTint = folder.color
         view.label = folder.name
-        view.showLabel = prefs.labels
+        view.showLabel = prefs.labels && pageIndex !in layout.unlabelledPages
         view.iconSizeDp = prefs.iconDp()
         view.setOnClickListener { openFolder(folder) }
         view.setOnLongClickListener {
-            menu.show(view, listOf(
-                PixelMenu.Entry("Open") { openFolder(folder) },
-                PixelMenu.Entry("Remove folder") {
-                    layout.remove(folder)
-                    save()
-                    rebuild()
-                    Pixel.say(this, "Folder removed. The apps are still in the app drawer.")
-                },
-            ), view.iconRect())
+            showFolderMenu(view, folder)
             true
         }
         view.onDragOut = { startDrag(it, DragInfo(Source.HOME, item = folder, view = it)) }
+    }
+
+    private fun showFolderMenu(view: AppIconView, folder: FolderItem) {
+        val entries = mutableListOf(
+            PixelMenu.Entry("Open") { openFolder(folder) },
+            PixelMenu.Entry("Colour") { showFolderColours(view, folder) },
+            PixelMenu.Entry("Sort A-Z") {
+                val collator = java.text.Collator.getInstance()
+                folder.apps.sortWith { a, b -> collator.compare(apps.label(a), apps.label(b)) }
+                saveAndRebuild()
+            },
+            PixelMenu.Entry("Sort by most used") {
+                // Ties keep their current order, so a fresh folder doesn't shuffle.
+                val order = folder.apps.sortedByDescending { usage.count(it) }
+                folder.apps.clear()
+                folder.apps.addAll(order)
+                saveAndRebuild()
+            },
+            PixelMenu.Entry(if (folder.labels) "Hide labels inside" else "Show labels inside") {
+                folder.labels = !folder.labels
+                saveAndRebuild()
+            },
+        )
+        if (folder.cover != null) entries += PixelMenu.Entry("Show 4 apps as cover") {
+            folder.cover = null
+            saveAndRebuild()
+        }
+        entries += PixelMenu.Entry("Remove folder") {
+            layout.remove(folder)
+            saveAndRebuild()
+            Pixel.say(this, "Folder removed. The apps are still in the app drawer.")
+        }
+        menu.show(view, entries, view.iconRect())
+    }
+
+    private fun showFolderColours(view: AppIconView, folder: FolderItem) {
+        val names = listOf("Violet", "Teal", "Orange", "Blue", "Pink", "White")
+        val entries = mutableListOf(PixelMenu.Entry("Plain") {
+            folder.color = null
+            saveAndRebuild()
+        })
+        Pixel.ACCENTS.forEachIndexed { i, color ->
+            entries += PixelMenu.Entry(names.getOrElse(i) { "Colour ${i + 1}" }) {
+                folder.color = color
+                saveAndRebuild()
+            }
+        }
+        menu.show(view, entries, view.iconRect())
+    }
+
+    private fun saveAndRebuild() {
+        save()
+        rebuild()
     }
 
     private fun launch(key: AppKey, from: View?) {
@@ -533,6 +595,7 @@ class LauncherActivity : Activity() {
         try {
             val user = apps.userFor(key) ?: throw IllegalStateException()
             apps.launcher.startMainActivity(apps.component(key), user, bounds, opts)
+            usage.record(key)
         } catch (e: Exception) {
             Pixel.say(this, "${apps.label(key)} can't be opened. It may have been uninstalled or disabled.")
         }
@@ -637,12 +700,21 @@ class LauncherActivity : Activity() {
     private fun openFolder(folder: FolderItem) {
         openFolder = folder
         folderView.title.setText(folder.name)
-        val cell = Pixel.dpi(this, prefs.iconDp() + 40)
-        folderView.setIcons(folder.apps.map { key ->
-            AppIconView(this).also { bindIcon(it, key, Source.FOLDER, folder = folder) }
-        }, cell)
+        fillFolder(folder, dragging = null)
         folderView.visibility = View.VISIBLE
         if (Pixel.motion(this)) folderView.popIn()
+    }
+
+    /** (Re)lay the open folder's icons, dimming the one being dragged around inside it. */
+    private fun fillFolder(folder: FolderItem, dragging: AppKey?) {
+        val cell = Pixel.dpi(this, prefs.iconDp() + if (folder.labels) 40 else 20)
+        folderView.setAccent(prefs.accent, folder.color)
+        folderView.setIcons(folder.apps.map { key ->
+            AppIconView(this).also {
+                bindIcon(it, key, Source.FOLDER, folder = folder)
+                if (key == dragging) it.alpha = 0.25f
+            }
+        }, cell)
         refreshFolderDots(folder)
     }
 
@@ -677,8 +749,16 @@ class LauncherActivity : Activity() {
     // ---------------------------------------------------------------- menus
 
     private fun showHomeMenu(x: Float, y: Float) {
+        // The page under the finger: the right one of a pair if it was on the right half.
+        val page = workspace.currentPage + if (workspace.panes > 1 && x > workspace.width / 2f) 1 else 0
+        val labelsHere = page !in layout.unlabelledPages
         menu.show(workspace, listOf(
             PixelMenu.Entry("Widgets") { showWidgetPicker() },
+            PixelMenu.Entry(if (labelsHere) "Hide labels on this page" else "Show labels on this page") {
+                while (page >= layout.pages.size) layout.pages.add(mutableListOf())
+                if (labelsHere) layout.unlabelledPages.add(page) else layout.unlabelledPages.remove(page)
+                saveAndRebuild()
+            },
             PixelMenu.Entry("Wallpaper") {
                 try {
                     startActivity(Intent.createChooser(Intent(Intent.ACTION_SET_WALLPAPER), "Wallpaper"))
@@ -718,7 +798,16 @@ class LauncherActivity : Activity() {
                 save()
                 rebuild()
             }
-            Source.FOLDER -> entries += PixelMenu.Entry("Remove from folder") {
+            Source.FOLDER -> entries += if (folder?.cover == key) PixelMenu.Entry("Stop using as cover") {
+                folder?.cover = null
+                saveAndRebuild()
+            } else PixelMenu.Entry("Use as folder cover") {
+                folder?.cover = key
+                saveAndRebuild()
+            }
+        }
+        if (source == Source.FOLDER) {
+            entries += PixelMenu.Entry("Remove from folder") {
                 removeFromFolder(folder!!, key)
                 closeFolder()
                 save()
@@ -802,8 +891,9 @@ class LauncherActivity : Activity() {
             hideDrawerNow()
         }
         if (info.source == Source.FOLDER) {
+            // The folder stays open: drag inside it to re-order, or out of it to place elsewhere.
             folderView.hideKeyboard()
-            folderView.visibility = View.GONE
+            view.alpha = 0.25f
         }
         val started = view.startDragAndDrop(null, shadow, info, View.DRAG_FLAG_OPAQUE)
         if (!started) return
@@ -819,6 +909,7 @@ class LauncherActivity : Activity() {
         when (e.action) {
             DragEvent.ACTION_DRAG_STARTED -> return true
             DragEvent.ACTION_DRAG_LOCATION -> {
+                if (reorderInFolder(info, e.x, e.y)) return true
                 dragTarget = targetAt(e.x, e.y, info)
                 showTarget(dragTarget, info)
                 val edge = Pixel.dp(this, 24f)
@@ -834,6 +925,8 @@ class LauncherActivity : Activity() {
                 }
             }
             DragEvent.ACTION_DROP -> {
+                // Let go inside the open folder: the re-order already happened as it moved.
+                if (info.source == Source.FOLDER && openFolder != null && folderView.panelContains(e.x, e.y)) return true
                 landed = null
                 val ok = drop(info, targetAt(e.x, e.y, info))
                 if (ok && landed == null) landed = (info.item as? FolderItem) ?: info.singleApp()
@@ -845,13 +938,40 @@ class LauncherActivity : Activity() {
                 clearTargets()
                 removeBar.visibility = View.GONE
                 info.view?.alpha = 1f
-                if (openFolder != null && info.source == Source.FOLDER) openFolder = null
                 layout.trimEmptyPages()
                 save()
                 rebuild()
+                // Still inside the folder: show it in its new order, nothing dimmed.
+                openFolder?.let { fillFolder(it, dragging = null) }
                 landed?.let { tag -> root.post { hopLanded(tag) } }
                 landed = null
             }
+        }
+        return true
+    }
+
+    /**
+     * Dragging an app from an open folder. Over the panel, it re-orders live: the other apps
+     * glide out of the way. Out past the panel, the folder closes and it's a normal drag.
+     * Returns true while the folder is handling it.
+     */
+    private fun reorderInFolder(info: DragInfo, x: Float, y: Float): Boolean {
+        val folder = openFolder ?: return false
+        if (info.source != Source.FOLDER || info.folder !== folder) return false
+        val app = info.app ?: return false
+        if (!folderView.panelContains(x, y)) {
+            removeBar.visibility = View.VISIBLE
+            closeFolder()
+            return false
+        }
+        removeBar.visibility = View.GONE
+        val to = folderView.indexAt(x, y)
+        val from = folder.apps.indexOf(app)
+        if (from >= 0 && to != from) {
+            val before = folderView.positions()
+            folder.move(from, to)
+            fillFolder(folder, dragging = app)
+            folderView.glideFrom(before)
         }
         return true
     }

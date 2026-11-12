@@ -23,6 +23,12 @@ class AppIconView(context: Context) : View(context) {
 
     var sprite: Bitmap? = null
     var folderSprites: List<Bitmap?>? = null
+
+    /** A folder showing one app as its cover (drawn big inside the frame). */
+    var folderCover: Bitmap? = null
+
+    /** A folder's chosen colour, or null for the plain frame. */
+    var folderTint: Int? = null
     var label: String = ""
     var showLabel = true
     var iconSizeDp = 50
@@ -103,8 +109,22 @@ class AppIconView(context: Context) : View(context) {
         dst.set(r)
         val folderApps = folderSprites
         if (folderApps != null) {
+            val tint = folderTint
+            folder.fill = if (tint != null) withAlpha(blend(Pixel.PANEL, tint, 0.3f), 235) else withAlpha(Pixel.PANEL, 230)
+            folder.border = tint ?: Pixel.MUTED
             folder.setBounds(r)
             folder.draw(canvas)
+            val cover = folderCover
+            if (cover != null) {
+                // One app, big, still a whole number of pixels per sprite pixel.
+                val size = max(IconCache.SIZE, ((r.width() * 0.72f) / IconCache.SIZE).toInt() * IconCache.SIZE)
+                val l = r.left + (r.width() - size) / 2
+                val t = r.top + (r.height() - size) / 2
+                dst.set(l.toFloat(), t.toFloat(), (l + size).toFloat(), (t + size).toFloat())
+                canvas.drawBitmap(cover, null, dst, spritePaint)
+                drawExtras(canvas, r)
+                return
+            }
             // 2x2 mini sprites, each a whole number of pixels.
             val inner = r.width() - 6 * px.toInt()
             val cell = max(IconCache.SIZE / 2, (inner / 2 / (IconCache.SIZE / 2)) * (IconCache.SIZE / 2))
@@ -126,6 +146,11 @@ class AppIconView(context: Context) : View(context) {
                 canvas.drawRect(dst.left + inset, dst.top + inset, dst.right - inset, dst.bottom - inset, placeholderPaint)
             }
         }
+        drawExtras(canvas, r)
+    }
+
+    /** The notification dot and the label: the same for apps and folders. */
+    private fun drawExtras(canvas: Canvas, r: Rect) {
         if (hasDot) {
             // A 3x3 sprite-pixel square on the top-right corner, outlined so it reads on any icon.
             val p = r.width() / IconCache.SIZE.toFloat()

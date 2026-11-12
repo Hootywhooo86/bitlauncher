@@ -38,13 +38,38 @@ sealed class Item {
 }
 
 class AppItem(val app: AppKey, override var x: Int, override var y: Int) : Item() {
+    /** Swipe up on the icon runs this shortcut of the app (its id), instead of opening the drawer. */
+    var swipe: String? = null
+
     override fun toJson(): JSONObject = app.toJson().put("t", "app").put("x", x).put("y", y)
+        .also { o -> swipe?.let { o.put("swipe", it) } }
 }
 
 class FolderItem(var name: String, val apps: MutableList<AppKey>, override var x: Int, override var y: Int) : Item() {
+    /** Show this one app as the folder's icon instead of the 2x2 preview. */
+    var cover: AppKey? = null
+
+    /** Tint for the folder's frame; null is the plain panel. */
+    var color: Int? = null
+
+    /** Labels under the apps inside this folder. */
+    var labels = true
+
     override fun toJson(): JSONObject = JSONObject()
         .put("t", "folder").put("name", name).put("x", x).put("y", y)
         .put("apps", JSONArray().also { a -> apps.forEach { a.put(it.toJson()) } })
+        .put("labels", labels)
+        .also { o ->
+            cover?.let { o.put("cover", it.toJson()) }
+            color?.let { o.put("color", it) }
+        }
+
+    /** Move the app at [from] to [to], shifting the others along. */
+    fun move(from: Int, to: Int) {
+        if (from !in apps.indices) return
+        val app = apps.removeAt(from)
+        apps.add(to.coerceIn(0, apps.size), app)
+    }
 }
 
 /** A hosted Android widget. [provider] is the flattened ComponentName, kept so a restore can say what was lost. */
@@ -69,6 +94,8 @@ class WidgetItem(
  * All placement rules live here so they can be tested off-device.
  */
 class HomeLayout(var grid: GridSize, val pages: MutableList<MutableList<Item>>, val dock: MutableList<AppKey?>) {
+    /** Pages (by index) whose icons show no labels. */
+    val unlabelledPages: MutableSet<Int> = mutableSetOf()
 
     init {
         if (pages.isEmpty()) pages.add(mutableListOf())
@@ -123,6 +150,7 @@ class HomeLayout(var grid: GridSize, val pages: MutableList<MutableList<Item>>, 
     /** Drop trailing empty pages, but always keep one. */
     fun trimEmptyPages() {
         while (pages.size > 1 && pages.last().isEmpty()) pages.removeAt(pages.size - 1)
+        unlabelledPages.removeAll { it >= pages.size }
     }
 
     /** Every app on home, in folders, and in the dock. */
@@ -143,7 +171,10 @@ class HomeLayout(var grid: GridSize, val pages: MutableList<MutableList<Item>>, 
     fun removeApps(gone: (AppKey) -> Boolean) {
         for (page in pages) {
             page.removeAll { it is AppItem && gone(it.app) }
-            for (folder in page.filterIsInstance<FolderItem>()) folder.apps.removeAll(gone)
+            for (folder in page.filterIsInstance<FolderItem>()) {
+                folder.apps.removeAll(gone)
+                if (folder.cover?.let(gone) == true) folder.cover = null
+            }
             dissolveSmallFolders(page)
         }
         for (i in dock.indices) if (dock[i]?.let(gone) == true) dock[i] = null
@@ -209,6 +240,7 @@ class HomeLayout(var grid: GridSize, val pages: MutableList<MutableList<Item>>, 
         .put("grid", grid.key)
         .put("pages", JSONArray().also { a -> pages.forEach { p -> a.put(JSONArray().also { pa -> p.forEach { pa.put(it.toJson()) } }) } })
         .put("dock", JSONArray().also { a -> dock.forEach { a.put(it?.toJson() ?: JSONObject.NULL) } })
+        .put("unlabelledPages", JSONArray(unlabelledPages.sorted()))
 
     companion object {
         fun empty(grid: GridSize) = HomeLayout(grid, mutableListOf(mutableListOf()), mutableListOf())
@@ -226,16 +258,24 @@ class HomeLayout(var grid: GridSize, val pages: MutableList<MutableList<Item>>, 
             val dock = mutableListOf<AppKey?>()
             val da = o.optJSONArray("dock") ?: JSONArray()
             for (i in 0 until da.length()) dock.add(da.optJSONObject(i)?.let(AppKey::fromJson))
-            return HomeLayout(grid, pages, dock)
+            return HomeLayout(grid, pages, dock).also { l ->
+                o.optJSONArray("unlabelledPages")?.let { a -> for (i in 0 until a.length()) l.unlabelledPages.add(a.getInt(i)) }
+            }
         }
 
         private fun itemFromJson(o: JSONObject): Item? = when (o.optString("t")) {
-            "app" -> AppItem(AppKey.fromJson(o), o.getInt("x"), o.getInt("y"))
+            "app" -> AppItem(AppKey.fromJson(o), o.getInt("x"), o.getInt("y")).apply {
+                swipe = o.optString("swipe").takeIf { it.isNotEmpty() }
+            }
             "folder" -> {
                 val apps = mutableListOf<AppKey>()
                 val a = o.getJSONArray("apps")
                 for (i in 0 until a.length()) apps.add(AppKey.fromJson(a.getJSONObject(i)))
-                FolderItem(o.optString("name", "Folder"), apps, o.getInt("x"), o.getInt("y"))
+                FolderItem(o.optString("name", "Folder"), apps, o.getInt("x"), o.getInt("y")).apply {
+                    cover = o.optJSONObject("cover")?.let(AppKey::fromJson)
+                    color = if (o.has("color")) o.getInt("color") else null
+                    labels = o.optBoolean("labels", true)
+                }
             }
             "widget" -> WidgetItem(o.getInt("id"), o.optString("provider"), o.getInt("x"), o.getInt("y"), o.getInt("w"), o.getInt("h"))
             else -> null
