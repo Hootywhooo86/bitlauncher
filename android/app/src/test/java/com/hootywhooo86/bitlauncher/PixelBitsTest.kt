@@ -90,11 +90,12 @@ class PixelBitsTest {
     }
 
     @Test
-    fun motionMovesInWholeSteps() {
-        val steps = StepInterpolator(4)
-        assertEquals(0f, steps.getInterpolation(0.1f))
-        assertEquals(0.25f, steps.getInterpolation(0.3f))
-        assertEquals(0.75f, steps.getInterpolation(0.99f))
-        assertEquals(1f, steps.getInterpolation(1f))
+    fun gesturesFinishAtTheFingersPace() {
+        // Slow release, most of the way left: the longest, capped so it never drags.
+        assertEquals(300L, Ease.finishDuration(1000f, 1000f, 0f))
+        // A hard flick finishes quickly, but never faster than the eye can follow.
+        assertEquals(120L, Ease.finishDuration(1000f, 1000f, 20000f))
+        // Almost there: short.
+        assertTrue(Ease.finishDuration(100f, 1000f, 0f) <= 130L)
     }
 }

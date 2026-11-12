@@ -79,15 +79,27 @@ class AppIconView(context: Context) : View(context) {
         return Rect(left, top, left + size, top + size)
     }
 
+    private var wasPressed = false
+
+    /** Pressed: the icon squishes in a touch; released, it springs back. */
     override fun drawableStateChanged() {
         super.drawableStateChanged()
-        invalidate() // pressed state moves the icon
+        if (isPressed == wasPressed) return
+        wasPressed = isPressed
+        if (!Pixel.motion(context)) return
+        val r = iconRect()
+        pivotX = r.exactCenterX()
+        pivotY = r.exactCenterY()
+        if (isPressed) {
+            animate().scaleX(0.9f).scaleY(0.9f).setDuration(110).setInterpolator(Ease.move).start()
+        } else {
+            animate().scaleX(1f).scaleY(1f).setDuration(260)
+                .setInterpolator(android.view.animation.OvershootInterpolator(3f)).start()
+        }
     }
 
     override fun onDraw(canvas: Canvas) {
         val r = iconRect()
-        // Pressed: the icon sinks by one sprite pixel, like a console button.
-        if (isPressed) r.offset(0, r.width() / IconCache.SIZE)
         dst.set(r)
         val folderApps = folderSprites
         if (folderApps != null) {

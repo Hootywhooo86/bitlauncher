@@ -72,6 +72,53 @@ class LauncherSmokeTest {
     }
 
     @Test
+    fun drawerFollowsTheFingerAndSettles() {
+        val activity = Robolectric.buildActivity(LauncherActivity::class.java).setup().get()
+        idle()
+        val root = activity.window.decorView
+        val workspace = findWorkspace(root)!!
+        val drawer = findDrawer(root)!!
+        val listener = workspace.listener!!
+
+        // Halfway through a pull, the drawer is partly in.
+        listener.onDrawerDrag(root.height * 0.2f)
+        assertEquals(View.VISIBLE, drawer.visibility)
+        assertTrue(drawer.alpha > 0f && drawer.alpha < 1f)
+
+        // A flick up finishes opening it.
+        listener.onDrawerRelease(root.height * 0.2f, -5000f)
+        shadowOf(Looper.getMainLooper()).idleFor(java.time.Duration.ofMillis(600))
+        assertEquals(1f, drawer.alpha)
+        assertEquals(0f, drawer.translationY)
+
+        // Pulled down a little and let go slowly: it stays open.
+        drawer.onPullDown!!(20f)
+        drawer.onPullRelease!!(20f, 0f)
+        shadowOf(Looper.getMainLooper()).idleFor(java.time.Duration.ofMillis(600))
+        assertEquals(View.VISIBLE, drawer.visibility)
+
+        // Pulled well down: it closes, and home comes back to full size.
+        drawer.onPullDown!!(root.height * 0.4f)
+        drawer.onPullRelease!!(root.height * 0.4f, 0f)
+        shadowOf(Looper.getMainLooper()).idleFor(java.time.Duration.ofMillis(600))
+        assertEquals(View.GONE, drawer.visibility)
+        assertEquals(1f, workspace.scaleX)
+        assertEquals(1f, workspace.alpha)
+
+        // A short, slow tug from home slides back closed.
+        listener.onDrawerDrag(10f)
+        listener.onDrawerRelease(10f, 0f)
+        shadowOf(Looper.getMainLooper()).idleFor(java.time.Duration.ofMillis(600))
+        assertEquals(View.GONE, drawer.visibility)
+    }
+
+    private fun findDrawer(v: View): DrawerView? {
+        if (v is DrawerView) return v
+        if (v is android.view.ViewGroup) for (i in 0 until v.childCount) findDrawer(v.getChildAt(i))?.let { return it }
+        return null
+    }
+
+    @Test
     fun lockScreenOpensWithClockAndUnlockHint() {
         val activity = Robolectric.buildActivity(LockActivity::class.java).setup().get()
         idle()

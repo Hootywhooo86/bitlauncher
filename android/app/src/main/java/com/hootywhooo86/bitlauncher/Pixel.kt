@@ -11,7 +11,7 @@ import android.graphics.drawable.Drawable
 import android.view.Gravity
 import android.animation.ValueAnimator
 import android.view.View
-import android.view.animation.Interpolator
+import android.view.animation.PathInterpolator
 import android.widget.TextView
 import android.widget.Toast
 
@@ -121,10 +121,23 @@ class PanelDrawable(context: Context, var fill: Int, var border: Int, private va
 fun withAlpha(color: Int, alpha: Int): Int = Color.argb(alpha, Color.red(color), Color.green(color), Color.blue(color))
 
 /**
- * Pixel motion: progress jumps in [steps] equal steps instead of gliding, like a sprite moving
- * a block at a time. Short animations with 3–4 steps read as "retro" without feeling slow.
+ * Motion curves. The art is pixel; the movement is smooth. Things arriving start fast and
+ * settle gently, things leaving ease out of the way, and anything already moving keeps going.
  */
-class StepInterpolator(private val steps: Int) : Interpolator {
-    override fun getInterpolation(t: Float): Float =
-        if (t >= 1f) 1f else kotlin.math.floor(t * steps) / steps
+object Ease {
+    /** Arriving on screen: quick start, long soft landing. */
+    val enter by lazy { PathInterpolator(0.05f, 0.7f, 0.1f, 1f) }
+
+    /** Leaving: gets out of the way without a jolt. */
+    val exit by lazy { PathInterpolator(0.3f, 0f, 0.8f, 0.15f) }
+
+    /** Moving from one place to another, or finishing a gesture the finger started. */
+    val move by lazy { PathInterpolator(0.2f, 0f, 0f, 1f) }
+
+    /** How long to finish a gesture: shorter when the finger was fast or there's little left to go. */
+    fun finishDuration(remainingPx: Float, totalPx: Float, velocityPxPerSec: Float): Long {
+        val byDistance = 300f * (remainingPx / totalPx.coerceAtLeast(1f))
+        val byVelocity = if (velocityPxPerSec > 1f) remainingPx / velocityPxPerSec * 1000f * 1.6f else Float.MAX_VALUE
+        return minOf(byDistance, byVelocity).coerceIn(120f, 320f).toLong()
+    }
 }

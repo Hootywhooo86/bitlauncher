@@ -38,7 +38,9 @@ class DrawerView(context: Context, private val bind: (AppIconView, AppEntry) -> 
     private var all: List<AppEntry> = emptyList()
     private var shown: List<AppEntry> = emptyList()
     var onOpenFirst: ((AppEntry) -> Unit)? = null
-    var onCloseRequest: (() -> Unit)? = null
+    /** The drawer is being pulled down from the top of the list, [px] from where it started. */
+    var onPullDown: ((Float) -> Unit)? = null
+    var onPullRelease: ((px: Float, velocityY: Float) -> Unit)? = null
 
     private val slop = ViewConfiguration.get(context).scaledTouchSlop
     private var downY = 0f
@@ -158,16 +160,31 @@ class DrawerView(context: Context, private val bind: (AppIconView, AppEntry) -> 
             }
             MotionEvent.ACTION_MOVE -> {
                 val dy = e.y - downY
-                if (dy > slop * 2 && dy > abs(e.x - downX) && !grid.canScrollVertically(-1)) return true
+                if (dy > slop && dy > abs(e.x - downX) && !grid.canScrollVertically(-1)) {
+                    // Start the pull from here, so the drawer doesn't jump by the slop.
+                    downY = e.y
+                    hideKeyboard()
+                    return true
+                }
             }
         }
         return false
     }
 
+    private var velocity: android.view.VelocityTracker? = null
+
     override fun onTouchEvent(e: MotionEvent): Boolean {
-        if (e.actionMasked == MotionEvent.ACTION_MOVE && e.y - downY > slop * 4) {
-            onCloseRequest?.invoke()
-            return true
+        if (velocity == null) velocity = android.view.VelocityTracker.obtain()
+        velocity?.addMovement(e)
+        when (e.actionMasked) {
+            MotionEvent.ACTION_MOVE -> onPullDown?.invoke((e.y - downY).coerceAtLeast(0f))
+            MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
+                velocity?.computeCurrentVelocity(1000)
+                val vy = if (e.actionMasked == MotionEvent.ACTION_UP) velocity?.yVelocity ?: 0f else 0f
+                onPullRelease?.invoke((e.y - downY).coerceAtLeast(0f), vy)
+                velocity?.recycle()
+                velocity = null
+            }
         }
         return true
     }
@@ -221,11 +238,26 @@ class FolderView(context: Context) : FrameLayout(context) {
         }
     }
 
-    /** The panel pops open in three steps, from a little smaller to full size. */
+    /** The panel grows out of nothing and the dim fades in. */
     fun popIn() {
-        panel.scaleX = 0.7f
-        panel.scaleY = 0.7f
-        panel.animate().scaleX(1f).scaleY(1f).setDuration(120).setInterpolator(StepInterpolator(3)).start()
+        animate().cancel()
+        panel.animate().cancel()
+        alpha = 0f
+        panel.scaleX = 0.85f
+        panel.scaleY = 0.85f
+        animate().alpha(1f).setDuration(180).setInterpolator(Ease.enter).start()
+        panel.animate().scaleX(1f).scaleY(1f).setDuration(260).setInterpolator(Ease.enter).start()
+    }
+
+    /** The reverse, a little quicker: leaving should never hold you up. */
+    fun popOut(end: () -> Unit) {
+        panel.animate().scaleX(0.9f).scaleY(0.9f).setDuration(150).setInterpolator(Ease.exit).start()
+        animate().alpha(0f).setDuration(150).setInterpolator(Ease.exit).withEndAction {
+            end()
+            alpha = 1f
+            panel.scaleX = 1f
+            panel.scaleY = 1f
+        }.start()
     }
 
     fun icons(): List<AppIconView> {
@@ -291,10 +323,13 @@ class PixelMenu(private val context: Context, private val accent: Int) {
         window.showAtLocation(anchor, Gravity.NO_GRAVITY, x, y)
         popup = window
         if (Pixel.motion(context)) {
-            // Two quick steps from 85% to full: a pixel "pop".
-            list.scaleX = 0.85f
-            list.scaleY = 0.85f
-            list.animate().scaleX(1f).scaleY(1f).setDuration(80).setInterpolator(StepInterpolator(2)).start()
+            // Grows from the side nearest the thing you pressed, and fades in.
+            list.pivotX = list.measuredWidth / 2f
+            list.pivotY = if (y < loc[1] + r.top) list.measuredHeight.toFloat() else 0f
+            list.scaleX = 0.9f
+            list.scaleY = 0.9f
+            list.alpha = 0f
+            list.animate().scaleX(1f).scaleY(1f).alpha(1f).setDuration(180).setInterpolator(Ease.enter).start()
         }
     }
 

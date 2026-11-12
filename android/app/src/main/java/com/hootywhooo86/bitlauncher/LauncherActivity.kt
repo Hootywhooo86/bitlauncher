@@ -168,7 +168,8 @@ class LauncherActivity : Activity() {
         root = FrameLayout(this)
         workspace = Workspace(this)
         workspace.listener = object : Workspace.Listener {
-            override fun onSwipeUp() = openDrawer()
+            override fun onDrawerDrag(px: Float) = dragDrawer(px)
+            override fun onDrawerRelease(px: Float, velocityY: Float) = releaseDrawer(velocityY)
             override fun onSwipeDown() = openNotifications()
             override fun onEmptyLongPress(x: Float, y: Float) = showHomeMenu(x - workspace.scrollX, y)
             override fun onPageChanged(page: Int) {
@@ -222,7 +223,13 @@ class LauncherActivity : Activity() {
         drawer = DrawerView(this) { view, entry -> bindIcon(view, entry.key, Source.DRAWER) }
         drawer.visibility = View.GONE
         drawer.onOpenFirst = { launch(it.key, null) }
-        drawer.onCloseRequest = { closeDrawer() }
+        // Swiping down at the top of the list pulls the drawer down with the finger.
+        drawer.onPullDown = { px -> drawerAnim?.cancel(); setDrawerProgress(1f - px / drawerTravel()) }
+        drawer.onPullRelease = { px, vy ->
+            val close = vy > flingSpeed || (vy > -flingSpeed && px > drawerTravel() * 0.25f)
+            if (close) drawer.hideKeyboard()
+            settleDrawer(if (close) 0f else 1f, kotlin.math.abs(vy))
+        }
         root.addView(drawer, FrameLayout.LayoutParams(-1, -1))
 
         folderView = FolderView(this)
@@ -360,13 +367,13 @@ class LauncherActivity : Activity() {
         for (j in 0 until dock.childCount) (dock.getChildAt(j) as? AppIconView)?.let { it.hasDot = dotFor(it.tagItem) }
     }
 
-    /** A landed icon hops one block up and back: pixel feedback that the drop worked. */
+    /** A landed icon swells slightly and settles into place, so you can see the drop worked. */
     private fun hop(view: View) {
         if (!Pixel.motion(this)) return
-        val up = -Pixel.dp(this, 6f)
-        view.animate().translationY(up).setDuration(70).setInterpolator(StepInterpolator(2)).withEndAction {
-            view.animate().translationY(0f).setDuration(70).setInterpolator(StepInterpolator(2)).start()
-        }.start()
+        view.scaleX = 1.18f
+        view.scaleY = 1.18f
+        view.animate().scaleX(1f).scaleY(1f).setDuration(320)
+            .setInterpolator(android.view.animation.OvershootInterpolator(2.5f)).start()
     }
 
     private fun hopLanded(tag: Any) {
@@ -499,39 +506,98 @@ class LauncherActivity : Activity() {
 
     // ---------------------------------------------------------------- drawer and folders
 
-    private fun openDrawer() {
+    private var drawerAnim: android.animation.ValueAnimator? = null
+    private val flingSpeed by lazy { Pixel.dp(this, 500f) }
+
+    /** How far the drawer travels on its way in. It also fades, so it needn't cross the whole screen. */
+    private fun drawerTravel() = (root.height * 0.45f).coerceAtLeast(1f)
+
+    /** Place the drawer at [progress]: 0 hidden, 1 open. Home recedes a little behind it. */
+    private fun setDrawerProgress(progress: Float) {
+        val p = progress.coerceIn(0f, 1f)
+        drawer.translationY = drawerTravel() * (1f - p)
+        drawer.alpha = p
+        val scale = 1f - 0.05f * p
+        workspace.scaleX = scale
+        workspace.scaleY = scale
+        for (v in listOf(workspace, dock, dots, header)) v.alpha = 1f - 0.6f * p
+    }
+
+    private fun drawerProgress() = drawer.alpha
+
+    private fun prepareDrawer() {
+        drawerAnim?.cancel()
         if (drawer.visibility == View.VISIBLE) return
         menu.dismiss()
         drawer.setApps(visibleApps())
         drawer.cellHeight = Pixel.dpi(this, prefs.iconDp() + 40)
         drawer.reset()
+        setDrawerProgress(0f)
         drawer.visibility = View.VISIBLE
-        if (!Pixel.motion(this)) {
-            drawer.translationY = 0f
-            drawer.alpha = 1f
-            if (prefs.drawerKeyboard) drawer.showKeyboard()
+    }
+
+    /** The finger is pulling the drawer up from home: it follows exactly. */
+    private fun dragDrawer(px: Float) {
+        prepareDrawer()
+        setDrawerProgress(px / drawerTravel())
+    }
+
+    /** Let go: open if it went far enough or was flung up, otherwise slide back. */
+    private fun releaseDrawer(velocityY: Float) {
+        val open = velocityY < -flingSpeed || (velocityY < flingSpeed && drawerProgress() > 0.3f)
+        settleDrawer(if (open) 1f else 0f, kotlin.math.abs(velocityY))
+    }
+
+    /** Finish the drawer's journey from wherever it is, at a speed that matches the finger. */
+    private fun settleDrawer(target: Float, velocity: Float) {
+        drawerAnim?.cancel()
+        val from = drawerProgress()
+        val done = {
+            if (target == 0f) {
+                drawer.visibility = View.GONE
+                drawer.reset()
+                setDrawerProgress(0f)
+            } else if (prefs.drawerKeyboard) {
+                drawer.showKeyboard()
+            }
+        }
+        if (!Pixel.motion(this) || from == target) {
+            setDrawerProgress(target)
+            done()
             return
         }
-        // Slides up in four chunky steps.
-        drawer.translationY = root.height * 0.2f
-        drawer.alpha = 0f
-        drawer.animate().translationY(0f).alpha(1f).setDuration(160).setInterpolator(StepInterpolator(4)).withEndAction {
-            if (prefs.drawerKeyboard) drawer.showKeyboard()
-        }.start()
+        val travel = drawerTravel()
+        drawerAnim = android.animation.ValueAnimator.ofFloat(from, target).apply {
+            duration = Ease.finishDuration(kotlin.math.abs(target - from) * travel, travel, velocity)
+            interpolator = if (target == 1f) Ease.move else Ease.exit
+            addUpdateListener { setDrawerProgress(it.animatedValue as Float) }
+            addListener(object : android.animation.AnimatorListenerAdapter() {
+                private var cancelled = false
+                override fun onAnimationCancel(animation: android.animation.Animator) { cancelled = true }
+                override fun onAnimationEnd(animation: android.animation.Animator) { if (!cancelled) done() }
+            })
+            start()
+        }
+    }
+
+    private fun openDrawer() {
+        prepareDrawer()
+        settleDrawer(1f, 0f)
     }
 
     private fun closeDrawer() {
         if (drawer.visibility != View.VISIBLE) return
         drawer.hideKeyboard()
-        if (!Pixel.motion(this)) {
-            drawer.visibility = View.GONE
-            drawer.reset()
-            return
-        }
-        drawer.animate().translationY(root.height * 0.2f).alpha(0f).setDuration(120).setInterpolator(StepInterpolator(3)).withEndAction {
-            drawer.visibility = View.GONE
-            drawer.reset()
-        }.start()
+        settleDrawer(0f, 0f)
+    }
+
+    /** Gone at once, no animation (a drag is taking over). */
+    private fun hideDrawerNow() {
+        drawerAnim?.cancel()
+        drawer.hideKeyboard()
+        drawer.visibility = View.GONE
+        drawer.reset()
+        setDrawerProgress(0f)
     }
 
     private fun openFolder(folder: FolderItem) {
@@ -560,8 +626,8 @@ class LauncherActivity : Activity() {
             rebuild()
         }
         folderView.hideKeyboard()
-        folderView.visibility = View.GONE
         openFolder = null
+        if (Pixel.motion(this)) folderView.popOut { folderView.visibility = View.GONE } else folderView.visibility = View.GONE
     }
 
     @Suppress("WrongConstant")
@@ -699,10 +765,7 @@ class LauncherActivity : Activity() {
         val shadow = (view as? AppIconView)?.shadowBuilder() ?: View.DragShadowBuilder(view)
         if (info.source == Source.DRAWER) {
             // Hide at once: the search box would otherwise take the drop as text mid-animation.
-            drawer.hideKeyboard()
-            drawer.animate().cancel()
-            drawer.visibility = View.GONE
-            drawer.reset()
+            hideDrawerNow()
         }
         if (info.source == Source.FOLDER) {
             folderView.hideKeyboard()

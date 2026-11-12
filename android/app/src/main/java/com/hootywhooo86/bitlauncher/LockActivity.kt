@@ -132,6 +132,7 @@ class LockActivity : Activity() {
 
     override fun onDestroy() {
         super.onDestroy()
+        float?.cancel()
         unregisterReceiver(unlocked)
     }
 
@@ -139,6 +140,7 @@ class LockActivity : Activity() {
         super.onNewIntent(intent)
         shownAt = SystemClock.elapsedRealtime()
         content.translationY = 0f
+        content.alpha = 1f
         renderNotes(animate = false)
     }
 
@@ -168,7 +170,6 @@ class LockActivity : Activity() {
             orientation = LinearLayout.VERTICAL
             gravity = Gravity.CENTER_HORIZONTAL
         }
-        root.snap = block
         root.content = content
 
         clock = PixelClockView(this, blink = true).apply { this.accent = accent }
@@ -218,19 +219,19 @@ class LockActivity : Activity() {
         return root
     }
 
-    /** The chevron hops a block up and down, once a second. Pixel-style, no tweening. */
+    private var float: android.animation.ValueAnimator? = null
+
+    /** The chevron floats gently up and down, like it's breathing. */
     private fun bob() {
         if (!Pixel.motion(this)) return
-        val up = Runnable { chevron.translationY = -block.toFloat() }
-        val down = Runnable { chevron.translationY = 0f }
-        hint.post(object : Runnable {
-            override fun run() {
-                if (isFinishing) return
-                up.run()
-                hint.postDelayed(down, 500)
-                hint.postDelayed(this, 1000)
-            }
-        })
+        float = android.animation.ValueAnimator.ofFloat(0f, -block * 1.5f).apply {
+            duration = 900
+            repeatMode = android.animation.ValueAnimator.REVERSE
+            repeatCount = android.animation.ValueAnimator.INFINITE
+            interpolator = android.view.animation.AccelerateDecelerateInterpolator()
+            addUpdateListener { chevron.translationY = it.animatedValue as Float }
+            start()
+        }
     }
 
     private fun renderNotes(animate: Boolean) {
@@ -294,11 +295,11 @@ class LockActivity : Activity() {
         }
         row.addView(words, LinearLayout.LayoutParams(0, -2, 1f))
         if (animate && Pixel.motion(this)) {
-            // Rows step in from the side, one after another.
-            row.translationX = (block * 6).toFloat()
+            // Rows slide up into place one after another.
+            row.translationY = (block * 5).toFloat()
             row.alpha = 0f
-            row.animate().translationX(0f).alpha(1f).setStartDelay(index * 50L).setDuration(160)
-                .setInterpolator(StepInterpolator(4)).start()
+            row.animate().translationY(0f).alpha(1f).setStartDelay(index * 45L).setDuration(340)
+                .setInterpolator(Ease.enter).start()
         }
         return row
     }
@@ -329,7 +330,7 @@ class LockActivity : Activity() {
     }
 
     private fun resetSwipe() {
-        content.animate().translationY(0f).setDuration(120).setInterpolator(StepInterpolator(3)).start()
+        content.animate().translationY(0f).alpha(1f).setDuration(260).setInterpolator(Ease.move).start()
     }
 
     private fun overridePendingTransitionCompat() {
@@ -345,24 +346,23 @@ class LockActivity : Activity() {
 }
 
 /**
- * Follows your finger up, a whole block at a time, and unlocks past a quarter of the screen.
+ * Follows your finger up exactly, fading as it goes. Let go past a quarter of the screen, or
+ * flick up, and it carries on up and unlocks; otherwise it springs back down.
  * Taps still reach the notification rows.
  */
 private class SwipeUpFrame(context: Context, private val onUnlock: () -> Unit) : FrameLayout(context) {
     var content: View? = null
-    var snap = 1
     private val slop = ViewConfiguration.get(context).scaledTouchSlop
+    private val fling = Pixel.dp(context, 500f)
     private var downY = 0f
-    private var dragging = false
+    private var velocity: android.view.VelocityTracker? = null
 
     override fun onInterceptTouchEvent(e: MotionEvent): Boolean {
         when (e.actionMasked) {
-            MotionEvent.ACTION_DOWN -> {
-                downY = e.y
-                dragging = false
-            }
+            MotionEvent.ACTION_DOWN -> downY = e.y
             MotionEvent.ACTION_MOVE -> if (downY - e.y > slop) {
-                dragging = true
+                downY = e.y // no jump by the slop
+                content?.animate()?.cancel()
                 return true
             }
         }
@@ -370,20 +370,33 @@ private class SwipeUpFrame(context: Context, private val onUnlock: () -> Unit) :
     }
 
     override fun onTouchEvent(e: MotionEvent): Boolean {
+        if (velocity == null) velocity = android.view.VelocityTracker.obtain()
+        velocity?.addMovement(e)
+        val c = content ?: return true
         when (e.actionMasked) {
             MotionEvent.ACTION_DOWN -> downY = e.y
             MotionEvent.ACTION_MOVE -> {
                 val up = (downY - e.y).coerceAtLeast(0f)
-                content?.translationY = -((up / snap).toInt() * snap).toFloat()
+                c.translationY = -up
+                c.alpha = 1f - (up / (height / 2f)).coerceIn(0f, 0.8f)
             }
             MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
+                velocity?.computeCurrentVelocity(1000)
+                val vy = velocity?.yVelocity ?: 0f
+                velocity?.recycle()
+                velocity = null
                 val up = downY - e.y
-                if (e.actionMasked == MotionEvent.ACTION_UP && up > height / 4f) {
-                    onUnlock()
+                val unlock = e.actionMasked == MotionEvent.ACTION_UP && (vy < -fling || (vy < fling && up > height / 4f))
+                if (unlock) {
+                    // Carry on in the direction the finger was going, then hand over.
+                    val rest = height / 2f + c.translationY
+                    c.animate().translationY(-height / 2f).alpha(0f)
+                        .setDuration(Ease.finishDuration(rest.coerceAtLeast(0f), height / 2f, -vy))
+                        .setInterpolator(Ease.move).withEndAction(onUnlock).start()
                 } else {
-                    content?.animate()?.translationY(0f)?.setDuration(120)?.setInterpolator(StepInterpolator(3))?.start()
+                    c.animate().translationY(0f).alpha(1f).setDuration(280)
+                        .setInterpolator(android.view.animation.OvershootInterpolator(1.2f)).start()
                 }
-                dragging = false
             }
         }
         return true

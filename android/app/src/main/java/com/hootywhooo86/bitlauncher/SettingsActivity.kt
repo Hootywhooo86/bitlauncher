@@ -99,7 +99,7 @@ class SettingsActivity : Activity() {
         ))
 
         section("ANIMATIONS")
-        body.addView(note("Chunky, stepped motion. Also off whenever your phone's \"remove animations\" is on."))
+        body.addView(note("Smooth motion: things follow your finger and settle gently. Also off whenever your phone's \"remove animations\" is on."))
         row(listOf(
             choice("ON", prefs.animations) { changed { prefs.animations = true } },
             choice("OFF", !prefs.animations) { changed { prefs.animations = false } },

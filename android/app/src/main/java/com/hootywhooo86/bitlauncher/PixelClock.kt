@@ -40,7 +40,7 @@ object PixelGlyphs {
 
 /**
  * A chunky block clock. Each digit is drawn as squares with a hard drop shadow. When a digit
- * changes it drops in from above, a block at a time. On the lock screen the colon blinks.
+ * changes it slides down into place. On the lock screen the colon pulses.
  */
 class PixelClockView(context: Context, private val blink: Boolean) : View(context) {
     var accent = Pixel.ACCENTS[0]
@@ -55,19 +55,20 @@ class PixelClockView(context: Context, private val blink: Boolean) : View(contex
     private var digits = intArrayOf(-1, -1, -1, -1)
     private var leading = true // hide a leading zero in 12-hour time, like a real clock face
     private val drop = FloatArray(4) // 1 = fully above, 0 = landed
-    private var colonOn = true
     private var dropAnim: ValueAnimator? = null
 
     private val tick = object : BroadcastReceiver() {
         override fun onReceive(c: Context, i: Intent) = update(animate = true)
     }
-    private val blinker = object : Runnable {
-        override fun run() {
-            colonOn = !colonOn
-            invalidate()
-            postDelayed(this, 1000)
-        }
+    /** The colon breathes once a second: fades down and back up, never snaps. */
+    private val pulse = ValueAnimator.ofFloat(1f, 0.35f).apply {
+        duration = 1000
+        repeatMode = ValueAnimator.REVERSE
+        repeatCount = ValueAnimator.INFINITE
+        interpolator = android.view.animation.AccelerateDecelerateInterpolator()
+        addUpdateListener { colonLevel = it.animatedValue as Float; invalidate() }
     }
+    private var colonLevel = 1f
 
     override fun onAttachedToWindow() {
         super.onAttachedToWindow()
@@ -77,13 +78,13 @@ class PixelClockView(context: Context, private val blink: Boolean) : View(contex
             addAction(Intent.ACTION_TIMEZONE_CHANGED)
         })
         update(animate = false)
-        if (blink) postDelayed(blinker, 1000)
+        if (blink && Pixel.motion(context)) pulse.start()
     }
 
     override fun onDetachedFromWindow() {
         super.onDetachedFromWindow()
         context.unregisterReceiver(tick)
-        removeCallbacks(blinker)
+        pulse.cancel()
         dropAnim?.cancel()
     }
 
@@ -99,8 +100,8 @@ class PixelClockView(context: Context, private val blink: Boolean) : View(contex
             for (i in 0..3) drop[i] = if (changed[i]) 1f else 0f
             dropAnim?.cancel()
             dropAnim = ValueAnimator.ofFloat(1f, 0f).apply {
-                duration = 280
-                interpolator = StepInterpolator(4)
+                duration = 420
+                interpolator = Ease.enter
                 addUpdateListener { a ->
                     val v = a.animatedValue as Float
                     for (i in 0..3) if (changed[i]) drop[i] = v
@@ -139,7 +140,7 @@ class PixelClockView(context: Context, private val blink: Boolean) : View(contex
             x += block * PixelGlyphs.W + block
             if (i == 1) {
                 x += block // two-block gap before the colon
-                colon.color = if (colonOn) accent else withAlpha(accent, 60)
+                colon.color = withAlpha(accent, (255 * colonLevel).toInt())
                 canvas.drawRect(x, top + block * 2, x + block, top + block * 3, colon)
                 canvas.drawRect(x, top + block * 4, x + block, top + block * 5, colon)
                 x += block * 3

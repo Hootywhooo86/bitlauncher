@@ -101,7 +101,11 @@ class CellLayout(context: Context, var cols: Int, var rows: Int) : ViewGroup(con
  */
 class Workspace(context: Context) : ViewGroup(context) {
     interface Listener {
-        fun onSwipeUp()
+        /** The finger is pulling the drawer up; [px] is how far, from where it started. */
+        fun onDrawerDrag(px: Float)
+
+        /** The finger let go of the drawer; [velocityY] is negative going up. */
+        fun onDrawerRelease(px: Float, velocityY: Float)
         fun onSwipeDown()
         fun onEmptyLongPress(x: Float, y: Float)
         fun onPageChanged(page: Int)
@@ -111,7 +115,7 @@ class Workspace(context: Context) : ViewGroup(context) {
     var currentPage = 0
         private set
 
-    private val scroller = OverScroller(context)
+    private val scroller = OverScroller(context, android.view.animation.DecelerateInterpolator(1.6f))
     private val slop = ViewConfiguration.get(context).scaledTouchSlop
     private val minFling = ViewConfiguration.get(context).scaledMinimumFlingVelocity * 4
     private var velocity: VelocityTracker? = null
@@ -147,12 +151,15 @@ class Workspace(context: Context) : ViewGroup(context) {
         if (scroller.isFinished) scrollTo(currentPage * width, 0)
     }
 
-    fun snapTo(page: Int, animate: Boolean = true) {
+    fun snapTo(page: Int, animate: Boolean = true, velocityX: Float = 0f) {
         val target = page.coerceIn(0, (childCount - 1).coerceAtLeast(0))
         val changed = target != currentPage
         currentPage = target
         if (animate && width > 0) {
-            scroller.startScroll(scrollX, 0, target * width - scrollX, 0, 220)
+            // A fast fling lands quickly; a slow drag glides the rest of the way.
+            val dx = target * width - scrollX
+            val duration = Ease.finishDuration(abs(dx).toFloat(), width.toFloat(), abs(velocityX))
+            scroller.startScroll(scrollX, 0, dx, 0, duration.toInt())
             postInvalidateOnAnimation()
         } else {
             scroller.forceFinished(true)
@@ -215,9 +222,13 @@ class Workspace(context: Context) : ViewGroup(context) {
                     if (mode != 0) removeCallbacks(longPress)
                 }
                 if (mode == 1) {
+                    // Past the first or last page, resist: the page moves a third as far as the finger.
                     val maxX = ((childCount - 1) * width).coerceAtLeast(0)
-                    val next = (scrollX + (lastX - e.x)).coerceIn(-width / 8f, maxX + width / 8f)
-                    scrollTo(next.toInt(), 0)
+                    var delta = lastX - e.x
+                    if (scrollX < 0 || scrollX > maxX) delta /= 3f
+                    scrollTo((scrollX + delta).toInt().coerceIn(-width / 4, maxX + width / 4), 0)
+                } else if (mode == 2 && e.y < downY) {
+                    listener?.onDrawerDrag(downY - e.y)
                 }
                 lastX = e.x
             }
@@ -233,11 +244,11 @@ class Workspace(context: Context) : ViewGroup(context) {
                         vx > minFling -> currentPage - 1
                         else -> (scrollX + width / 2) / width.coerceAtLeast(1)
                     }
-                    snapTo(page)
-                } else if (mode == 2 && e.actionMasked == MotionEvent.ACTION_UP) {
+                    snapTo(page, velocityX = vx)
+                } else if (mode == 2) {
                     val dy = e.y - downY
-                    if (dy < -slop * 3 || vy < -minFling) listener?.onSwipeUp()
-                    else if (dy > slop * 3 || vy > minFling) listener?.onSwipeDown()
+                    if (dy < 0) listener?.onDrawerRelease(-dy, if (e.actionMasked == MotionEvent.ACTION_UP) vy else 0f)
+                    else if (e.actionMasked == MotionEvent.ACTION_UP && (dy > slop * 3 || vy > minFling)) listener?.onSwipeDown()
                 }
                 mode = 0
                 v?.recycle()
@@ -304,11 +315,11 @@ class PageDots(context: Context) : View(context) {
     private val size = Pixel.dp(context, 6f)
     private var grow = 0f
 
-    /** The new page's dot puffs up a block and settles. */
+    /** The new page's dot swells a little and settles. */
     private fun pop() {
         android.animation.ValueAnimator.ofFloat(1f, 0f).apply {
-            duration = 160
-            interpolator = StepInterpolator(2)
+            duration = 260
+            interpolator = Ease.move
             addUpdateListener { grow = it.animatedValue as Float; invalidate() }
             start()
         }

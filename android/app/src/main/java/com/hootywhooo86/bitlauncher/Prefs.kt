@@ -30,7 +30,7 @@ class Prefs(context: Context) {
         get() = sp.getBoolean("drawerKeyboard", false)
         set(v) = sp.edit().putBoolean("drawerKeyboard", v).apply()
 
-    /** Stepped pixel animations. The phone's own "remove animations" turns them off too. */
+    /** Animations. The phone's own "remove animations" turns them off too. */
     var animations: Boolean
         get() = sp.getBoolean("animations", true)
         set(v) = sp.edit().putBoolean("animations", v).apply()

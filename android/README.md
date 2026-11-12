@@ -19,8 +19,8 @@ views: no UI toolkit, no libraries, no network. The release APK is about 85 KB.
 | **Settings** | Grid, icon size, labels, accent colour (free), hidden apps, backup and restore, set as home app. |
 | **Pixel clock** | Hand-drawn 5x7 block digits and the date above the grid (Settings → Home clock). Tap it for your alarms. |
 | **Notification dots** | A small accent square on any app, or folder, with something new. Needs notification access. |
-| **Pixel lock screen** | Off until you turn it on. Block clock with a blinking colon, the date, and notifications, in front of the phone's own lock screen. Swipe up (it follows your finger a block at a time) and the phone's own PIN, pattern or fingerprint takes over; unlocking with the fingerprint sensor closes it too. It never shows during a call. |
-| **Pixel motion** | Everything moves in chunky steps: the drawer slides up in four, folders and menus pop, icons sink a pixel when pressed, a dropped icon hops, the new page dot puffs, a changed clock digit drops in. Off in Settings, and off whenever the phone's "remove animations" is on. |
+| **Pixel lock screen** | Off until you turn it on. Block clock with a softly pulsing colon, the date, and notifications, in front of the phone's own lock screen. Swipe up (it follows your finger) and the phone's own PIN, pattern or fingerprint takes over; unlocking with the fingerprint sensor closes it too. It never shows during a call. |
+| **Motion** | Pixel art, smooth movement. The app drawer follows your finger up and down and finishes at the speed you flicked; pages settle the same way and resist past the ends. Icons squish when pressed and spring back, a dropped icon settles into place, folders and menus grow in and fade out, a changed clock digit slides down, and the lock screen follows your swipe 1:1. Off in Settings, and off whenever the phone's "remove animations" is on. |
 | **Backup** | Layout and settings to a JSON file you choose. Every save on the phone is atomic and keeps the previous copy. |
 
 Every icon is pixelated once (32x32, alpha snapped on/off, 8 levels per colour,
