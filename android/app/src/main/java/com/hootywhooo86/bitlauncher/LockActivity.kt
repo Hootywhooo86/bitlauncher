@@ -469,9 +469,9 @@ private class SwipeUpFrame(context: Context, private val onUnlock: () -> Unit) :
 
 /**
  * The unlock: a snapshot of the lock screen that breaks into blocks, which drop out in a
- * random order over a third of a second. Behind it (the window is see-through) is home.
+ * random order over most of a second. Behind it (the window is see-through) is home.
  */
-private class DissolveView(context: Context, private val shot: android.graphics.Bitmap, private val size: Int, private val done: () -> Unit) : View(context) {
+internal class DissolveView(context: Context, private val shot: android.graphics.Bitmap, private val size: Int, private val done: () -> Unit) : View(context) {
     private val cols = (shot.width + size - 1) / size
     private val rows = (shot.height + size - 1) / size
     private val order = (0 until cols * rows).shuffled()
@@ -481,10 +481,15 @@ private class DissolveView(context: Context, private val shot: android.graphics.
     private val paint = android.graphics.Paint().apply { isFilterBitmap = false }
     private val removed = BooleanArray(cols * rows)
 
+    companion object {
+        /** Slow enough to see it happen: it starts gently, breaks up through the middle, settles. */
+        const val UNLOCK_MS = 800L
+    }
+
     fun start() {
         android.animation.ValueAnimator.ofInt(0, order.size).apply {
-            duration = 380
-            interpolator = Ease.enter
+            duration = UNLOCK_MS
+            interpolator = android.view.animation.AccelerateDecelerateInterpolator()
             addUpdateListener {
                 val target = it.animatedValue as Int
                 while (gone < target) removed[order[gone++]] = true

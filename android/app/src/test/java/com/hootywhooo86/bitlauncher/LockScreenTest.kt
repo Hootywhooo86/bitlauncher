@@ -50,9 +50,15 @@ class LockScreenTest {
 
         // Unlocked with the fingerprint sensor: it dissolves away and finishes.
         lock.sendBroadcast(android.content.Intent(android.content.Intent.ACTION_USER_PRESENT))
-        shadowOf(Looper.getMainLooper()).idleFor(java.time.Duration.ofMillis(800))
+        shadowOf(Looper.getMainLooper()).idleFor(java.time.Duration.ofMillis(1200))
         assertTrue(lock.isFinishing)
         Prefs(ctx).apply { scene = "none"; weather = false }
+    }
+
+    @Test
+    fun unlockDissolveIsSlowEnoughToSee() {
+        // The test phone runs animations instantly, so check the setting itself: most of a second.
+        assertTrue(DissolveView.UNLOCK_MS in 700L..1000L)
     }
 
     @Test
