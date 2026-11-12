@@ -1,7 +1,8 @@
 # bitlauncher for Android
 
 A pixel home screen that stays out of the way. Native Kotlin and plain Android
-views: no UI toolkit, no libraries, no network. The release APK is about 85 KB.
+views: no UI toolkit, no libraries. The release APK is about 170 KB. Nothing goes
+online unless you turn on weather.
 
 ## What's in it
 
@@ -11,16 +12,21 @@ views: no UI toolkit, no libraries, no network. The release APK is about 85 KB.
 | **Foldables** | Unfolded (a Pixel Fold's inner screen, or any wide screen), home shows two pages side by side like the Pixel launcher, and swipes move both. Clock and dock size to a page and the dock sits centred; the drawer gets more columns; the lock screen keeps a readable width. Folding or unfolding re-lays out instantly with nothing lost. |
 | **Dock** | One slot per column (up to 6). On first run it holds the phone's own dialer, messages, browser and camera. |
 | **App drawer** | Swipe up. Every app A–Z, search on top. The keyboard's Go opens the first match. Swipe down at the top to close. |
-| **Search** | Ignores case and accents; names that start with what you typed come first. Optional: keyboard opens with the drawer. |
+| **Search** | Ignores case and accents; names that start with what you typed come first. Also answers sums (`12*8`, `15% of 80`), converts units (`5 km to mi`, `-20 c in f`), finds phone settings ("wifi", "dark mode"), contacts (opt-in) and searches the web in Bit Browser if it's installed. A recent row above A–Z shows what you opened last. |
 | **Long-press an app** | The app's own shortcuts (when bitlauncher is your home app), Add to home, Remove, Hide, App info, Uninstall. Keep holding and move to drag. |
-| **Folders** | Drop one app on another. Tap the name to rename. A folder with one app left turns back into that app. |
+| **Folders** | Drop one app on another. Tap the name to rename. Hold an app inside and drag to re-order (the rest glide aside); drag it past the edge to take it out. The first four apps make the cover, or pick one app as a big cover. Colour, sort A–Z or by most used, labels on/off. Big folders scroll. A folder with one app left turns back into that app. |
 | **Widgets** | Long-press empty space → Widgets: every widget shown as a preview at its real proportions (Android 15's live preview, the app's preview layout, or its preview image), with the cells it takes. Long-press a widget to resize (step by step) or remove; hold and move to drag. |
 | **Wallpaper** | Uses the phone's wallpaper. Long-press empty space → Wallpaper. |
-| **Gestures** | Swipe up: drawer. Swipe down: notifications. Home button: closes whatever is open, then back to page one. |
+| **Gestures** | Swipe up: drawer. Swipe down: notifications. Swipe right on the first page: Today. Swipe up on a folder: its first app; on an app: a shortcut you pick. Double-tap empty space to lock (opt-in, accessibility). Home button: closes whatever is open, then back to page one. |
+| **Today** | Date, weather, your next events (calendar, read only, asks first), what's playing with controls and pixelated cover art, and any widgets you add (move, resize, remove). |
+| **Scenes** | Hand-built pixel landscapes behind home: Prairie, Rockies, Night City, Desert. Layers slide at different speeds as you swipe; the sky follows the real time of day, with stars and a moon at night. |
+| **Weather** | Off until you turn it on. Then a rough location goes to Open-Meteo (free, no account) and rain, snow, fog or storms appear in the scene, on Today and on the lock screen. Cached, so no signal means an older reading, never a made-up one. Animation pauses on battery saver, under 20%, and off-screen. |
+| **Themes & icons** | Five free themes (128bit, Game Boy, NES, PICO-8, CRT Amber). Any standard icon pack, pixelated. Rename any app, or give it a photo as its icon. Labels can be hidden per page or per folder. |
+| **Shift mode** | A Work layout alongside Home. Switch by hand, on a schedule (overnight shifts too), or from Railtime going on and off duty. See `docs/FAMILY_THEME.md`. |
 | **Settings** | Grid, icon size, labels, accent colour (free), hidden apps, backup and restore, set as home app. |
 | **Pixel clock** | Hand-drawn 5x7 block digits and the date above the grid (Settings → Home clock). Tap it for your alarms. |
 | **Notification dots** | A small accent square on any app, or folder, with something new. Needs notification access. |
-| **Pixel lock screen** | Off until you turn it on. Block clock with a softly pulsing colon, the date, and notifications, in front of the phone's own lock screen. Swipe up (it follows your finger) and the phone's own PIN, pattern or fingerprint takes over; unlocking with the fingerprint sensor closes it too. It never shows during a call. |
+| **Pixel lock screen** | Off until you turn it on. Your scene behind it, block clock with a softly pulsing colon, the date, weather, your next event (its name only if privacy allows), music controls and notifications, in front of the phone's own lock screen. Unlocking breaks it apart block by block to reveal home. Swipe up (it follows your finger) and the phone's own PIN, pattern or fingerprint takes over; unlocking with the fingerprint sensor closes it too. It never shows during a call. |
 | **Motion** | Pixel art, smooth movement. The app drawer follows your finger up and down and finishes at the speed you flicked; pages settle the same way and resist past the ends. Icons squish when pressed and spring back, a dropped icon settles into place, folders and menus grow in and fade out, a changed clock digit slides down, and the lock screen follows your swipe 1:1. Off in Settings, and off whenever the phone's "remove animations" is on. |
 | **Backup** | Layout and settings to a JSON file you choose. Every save on the phone is atomic and keeps the previous copy. |
 

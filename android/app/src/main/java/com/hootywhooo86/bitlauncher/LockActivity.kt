@@ -100,15 +100,17 @@ class LockActivity : Activity() {
     private lateinit var chevron: PixelChevron
     private lateinit var clock: PixelClockView
     private lateinit var date: TextView
+    private lateinit var info: TextView
+    private lateinit var mediaBox: LinearLayout
+    private lateinit var media: MediaSource
+    private var listW = 0
+    private var leaving = false
     private var block = 1
     private val onNotes = { renderNotes(animate = true) }
 
     /** Unlocked some other way (fingerprint sensor, face, smart lock): get out of the way. */
     private val unlocked = object : BroadcastReceiver() {
-        override fun onReceive(context: Context, intent: Intent) {
-            finish()
-            overridePendingTransitionCompat()
-        }
+        override fun onReceive(context: Context, intent: Intent) = leave()
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -126,6 +128,7 @@ class LockActivity : Activity() {
             window.setDecorFitsSystemWindows(false)
         }
         block = Pixel.dpi(this, 4)
+        media = MediaSource(this) { renderMedia() }
         setContentView(build())
         shownAt = SystemClock.elapsedRealtime()
         registerReceiver(unlocked, IntentFilter(Intent.ACTION_USER_PRESENT))
@@ -150,12 +153,15 @@ class LockActivity : Activity() {
         NotificationHub.listen(onNotes)
         date.text = DateFormat.getDateInstance(DateFormat.FULL).format(Date()).uppercase()
         clock.update(animate = false)
+        renderInfo()
+        media.start()
         renderNotes(animate = true)
     }
 
     override fun onStop() {
         super.onStop()
         NotificationHub.unlisten(onNotes)
+        media.stop()
     }
 
     @Deprecated("Deprecated in Java")
@@ -166,7 +172,18 @@ class LockActivity : Activity() {
     private fun build(): View {
         val accent = prefs.accent
         val root = SwipeUpFrame(this) { unlock(null) }
-        root.setBackgroundColor(withAlpha(Pixel.BG, 225))
+        root.setBackgroundColor(Pixel.BG)
+        // The home scene behind the lock screen too, dimmed so text stays readable.
+        if (prefs.scene != "none") {
+            val cached = if (prefs.weather) WeatherClient(this).cached() else null
+            root.addView(SceneView(this).apply {
+                scene = prefs.scene
+                sunrise = cached?.sunrise
+                sunset = cached?.sunset
+                sky = cached?.sky
+            }, FrameLayout.LayoutParams(-1, -1))
+            root.addView(View(this).apply { setBackgroundColor(withAlpha(Pixel.BG, 130)) }, FrameLayout.LayoutParams(-1, -1))
+        }
         content = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             gravity = Gravity.CENTER_HORIZONTAL
@@ -177,13 +194,21 @@ class LockActivity : Activity() {
         // On a big screen (an unfolded Fold) the clock and cards keep a readable size.
         val screenW = resources.displayMetrics.widthPixels
         val clockW = minOf(screenW - Pixel.dpi(this, 48), Pixel.dpi(this, 400))
-        val listW = minOf(screenW - Pixel.dpi(this, 40), Pixel.dpi(this, 520))
+        listW = minOf(screenW - Pixel.dpi(this, 40), Pixel.dpi(this, 520))
         content.addView(clock, LinearLayout.LayoutParams(clockW, -2))
         date = Pixel.label(this, "", 11f, Pixel.MUTED).apply {
             gravity = Gravity.CENTER
-            setPadding(0, Pixel.dpi(context, 14), 0, Pixel.dpi(context, 28))
+            setPadding(0, Pixel.dpi(context, 14), 0, Pixel.dpi(context, 6))
         }
         content.addView(date, LinearLayout.LayoutParams(-1, -2))
+        info = Pixel.label(this, "", 10f, Pixel.INK).apply {
+            gravity = Gravity.CENTER
+            setLineSpacing(Pixel.dp(context, 6f), 1f)
+            setPadding(0, Pixel.dpi(context, 6), 0, Pixel.dpi(context, 22))
+        }
+        content.addView(info, LinearLayout.LayoutParams(-1, -2))
+        mediaBox = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+        content.addView(mediaBox, LinearLayout.LayoutParams(listW, -2))
         list = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
         content.addView(list, LinearLayout.LayoutParams(listW, -2))
         root.addView(content, FrameLayout.LayoutParams(-1, -2, Gravity.TOP))
@@ -304,6 +329,47 @@ class LockActivity : Activity() {
     }
 
     /** Hand over to the phone's own unlock. Only after it succeeds do we open anything. */
+    /** Weather and the next event, under the date. The event's name follows the privacy setting. */
+    private fun renderInfo() {
+        val lines = mutableListOf<String>()
+        if (prefs.weather) WeatherClient(this).cached()?.let { w ->
+            val f = prefs.fahrenheit
+            lines += "${WeatherCodes.temp(w.tempC, f)} ${WeatherCodes.describe(w.code).uppercase()}  ·  H ${WeatherCodes.temp(w.highC, f)} L ${WeatherCodes.temp(w.lowC, f)}"
+        }
+        CalendarSource.upcoming(this, 1).firstOrNull()?.let { e ->
+            val showTitle = prefs.lockDetail > 0 && !NotificationHub.systemHidesSensitive(this)
+            val time = CalendarSource.whenText(this, e).uppercase()
+            lines += if (showTitle) "NEXT  $time  ${e.title.uppercase()}" else "NEXT EVENT  $time"
+        }
+        info.text = lines.joinToString("\n")
+        info.visibility = if (lines.isEmpty()) View.GONE else View.VISIBLE
+    }
+
+    private fun renderMedia() {
+        mediaBox.removeAllViews()
+        media.current()?.let { mediaBox.addView(TodayCards.media(this, prefs.accent, it)) }
+    }
+
+    /** Unlocked: break apart block by block to reveal home, then go. */
+    private fun leave() {
+        if (leaving) return
+        leaving = true
+        val root = window.decorView
+        if (!Pixel.motion(this) || root.width == 0) {
+            finish()
+            overridePendingTransitionCompat()
+            return
+        }
+        val shot = android.graphics.Bitmap.createBitmap(root.width, root.height, android.graphics.Bitmap.Config.ARGB_8888)
+        root.draw(android.graphics.Canvas(shot))
+        val dissolve = DissolveView(this, shot, Pixel.dpi(this, 18)) {
+            finish()
+            overridePendingTransitionCompat()
+        }
+        setContentView(dissolve)
+        dissolve.start()
+    }
+
     private fun unlock(line: LockLine?) {
         val then = {
             line?.intent?.let {
@@ -313,8 +379,7 @@ class LockActivity : Activity() {
                     Pixel.say(this, "That notification can't be opened any more.")
                 }
             }
-            finish()
-            overridePendingTransitionCompat()
+            leave()
         }
         val keyguard = getSystemService(KeyguardManager::class.java)
         if (!keyguard.isKeyguardLocked) {
@@ -399,5 +464,51 @@ private class SwipeUpFrame(context: Context, private val onUnlock: () -> Unit) :
             }
         }
         return true
+    }
+}
+
+/**
+ * The unlock: a snapshot of the lock screen that breaks into blocks, which drop out in a
+ * random order over a third of a second. Behind it (the window is see-through) is home.
+ */
+private class DissolveView(context: Context, private val shot: android.graphics.Bitmap, private val size: Int, private val done: () -> Unit) : View(context) {
+    private val cols = (shot.width + size - 1) / size
+    private val rows = (shot.height + size - 1) / size
+    private val order = (0 until cols * rows).shuffled()
+    private var gone = 0
+    private val src = android.graphics.Rect()
+    private val dst = android.graphics.Rect()
+    private val paint = android.graphics.Paint().apply { isFilterBitmap = false }
+    private val removed = BooleanArray(cols * rows)
+
+    fun start() {
+        android.animation.ValueAnimator.ofInt(0, order.size).apply {
+            duration = 380
+            interpolator = Ease.enter
+            addUpdateListener {
+                val target = it.animatedValue as Int
+                while (gone < target) removed[order[gone++]] = true
+                invalidate()
+            }
+            addListener(object : android.animation.AnimatorListenerAdapter() {
+                override fun onAnimationEnd(animation: android.animation.Animator) {
+                    shot.recycle()
+                    done()
+                }
+            })
+            start()
+        }
+    }
+
+    override fun onDraw(canvas: android.graphics.Canvas) {
+        if (shot.isRecycled) return
+        for (i in 0 until cols * rows) {
+            if (removed[i]) continue
+            val x = (i % cols) * size
+            val y = (i / cols) * size
+            src.set(x, y, minOf(x + size, shot.width), minOf(y + size, shot.height))
+            dst.set(src)
+            canvas.drawBitmap(shot, src, dst, paint)
+        }
     }
 }

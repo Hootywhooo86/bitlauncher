@@ -19,5 +19,7 @@
 
     <style name="Theme.Bit.Lock" parent="Theme.Bit.Home">
         <item name="android:windowAnimationStyle">@null</item>
+        <!-- See-through, so the unlock can dissolve away to reveal home behind it. -->
+        <item name="android:windowIsTranslucent">true</item>
     </style>
 </resources>

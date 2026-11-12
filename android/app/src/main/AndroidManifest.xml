@@ -51,7 +51,6 @@
             android:excludeFromRecents="true"
             android:exported="false"
             android:launchMode="singleTask"
-            android:screenOrientation="portrait"
             android:showWhenLocked="true"
             android:taskAffinity="com.hootywhooo86.bitlauncher.lock"
             android:theme="@style/Theme.Bit.Lock" />
