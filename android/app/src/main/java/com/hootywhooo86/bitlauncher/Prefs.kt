@@ -144,6 +144,11 @@ class Prefs(context: Context) {
         get() = sp.getInt("shiftEnd", 17 * 60)
         set(v) = sp.edit().putInt("shiftEnd", v).apply()
 
+        /** Set when something outside home (a pinned shortcut) changed the saved layout. */
+    var layoutChanged: Long
+        get() = sp.getLong("layoutChanged", 0L)
+        set(v) = sp.edit().putLong("layoutChanged", v).apply()
+
         /** App ids hidden from the drawer. */
     var hidden: Set<String>
         get() = sp.getStringSet("hidden", emptySet())!!.toSet()

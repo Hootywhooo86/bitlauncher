@@ -94,6 +94,19 @@
             android:authorities="com.hootywhooo86.bitlauncher.theme"
             android:exported="true" />
 
+        <!-- "Add to home screen" from other apps: pinned shortcuts and widgets. Asks first. -->
+        <activity
+            android:name=".AddItemActivity"
+            android:excludeFromRecents="true"
+            android:exported="true"
+            android:taskAffinity=""
+            android:theme="@style/Theme.Bit.Dialog">
+            <intent-filter>
+                <action android:name="android.content.pm.action.CONFIRM_PIN_SHORTCUT" />
+                <action android:name="android.content.pm.action.CONFIRM_PIN_APPWIDGET" />
+            </intent-filter>
+        </activity>
+
         <activity
             android:name=".SettingsActivity"
             android:exported="false"

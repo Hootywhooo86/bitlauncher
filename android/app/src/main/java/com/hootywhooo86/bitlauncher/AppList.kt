@@ -62,7 +62,13 @@ class AppList(private val context: Context, val icons: IconCache, private val on
 
     fun find(key: AppKey): AppEntry? = byId[key.id()]
 
-    fun label(key: AppKey): String = byId[key.id()]?.label ?: key.pkg.substringAfterLast('.')
+    fun label(key: AppKey): String = byId[key.id()]?.label
+        ?: if (PinnedShortcuts.isShortcut(key)) Prefs(context).renamed[key.id()] ?: PinnedShortcuts.label(context, key) ?: "Shortcut"
+        else key.pkg.substringAfterLast('.')
+
+    /** Is this still on the phone? A pinned shortcut counts as long as its app is installed. */
+    fun exists(key: AppKey): Boolean =
+        if (PinnedShortcuts.isShortcut(key)) apps.any { it.key.pkg == key.pkg && it.key.user == key.user } else find(key) != null
 
     private fun changed(pkg: String?) {
         if (pkg != null) worker.execute { icons.invalidate(pkg) }

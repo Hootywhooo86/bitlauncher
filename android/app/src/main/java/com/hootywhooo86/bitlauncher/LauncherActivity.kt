@@ -29,6 +29,7 @@ class LauncherActivity : Activity() {
     private lateinit var store: LayoutStore
     /** Which layout is showing: Shift.HOME or Shift.WORK. */
     private var mode = Shift.HOME
+    private var layoutLoadedAt = System.currentTimeMillis()
     private lateinit var icons: IconCache
     private lateinit var usage: Usage
     private lateinit var scene: SceneView
@@ -95,7 +96,8 @@ class LauncherActivity : Activity() {
 
         apps = AppList(this, icons) { onAppsChanged() }
         apps.onRemoved = { ids ->
-            layout.removeApps { it.id() in ids }
+            // Uninstalled apps go, and so do shortcuts they had pinned.
+            layout.removeApps { it.id() in ids || (PinnedShortcuts.isShortcut(it) && !apps.exists(it)) }
             save()
             rebuild()
         }
@@ -127,6 +129,12 @@ class LauncherActivity : Activity() {
     override fun onResume() {
         super.onResume()
         if (prefs.version != appliedPrefs) applyPrefs()
+        if (prefs.layoutChanged > layoutLoadedAt) {
+            // Something was pinned while we were away: pick up the saved layout.
+            layoutLoadedAt = System.currentTimeMillis()
+            layout = store.load(prefs.grid)
+            rebuild()
+        }
         Shift.current(prefs).let { if (it != mode) switchMode(it) }
         applyScene()
         refreshWeather()
@@ -496,7 +504,7 @@ class LauncherActivity : Activity() {
             // Apps uninstalled while the launcher wasn't running.
             pruned = true
             val before = layout.allApps().size
-            layout.removeApps { apps.find(it) == null }
+            layout.removeApps { !apps.exists(it) }
             if (layout.allApps().size != before) save()
         }
         if (firstRun && apps.loaded) {
@@ -673,6 +681,11 @@ class LauncherActivity : Activity() {
         val opts = from?.let { v ->
             val r = (v as? AppIconView)?.iconRect() ?: Rect(0, 0, v.width, v.height)
             ActivityOptions.makeScaleUpAnimation(v, r.left, r.top, r.width(), r.height()).toBundle()
+        }
+        if (PinnedShortcuts.isShortcut(key)) {
+            if (PinnedShortcuts.launch(this, key, bounds, opts)) usage.record(key)
+            else Pixel.say(this, "${apps.label(key)} no longer works; its app removed it. Hold it to remove it.")
+            return
         }
         try {
             val user = apps.userFor(key) ?: throw IllegalStateException()
@@ -1327,7 +1340,8 @@ class LauncherActivity : Activity() {
 
     private fun showAppMenu(view: AppIconView, key: AppKey, source: Source, item: Item?, folder: FolderItem?, dockIndex: Int) {
         val entries = mutableListOf<PixelMenu.Entry>()
-        entries += shortcutEntries(key)
+        val pinned = PinnedShortcuts.isShortcut(key)
+        if (!pinned) entries += shortcutEntries(key)
         when (source) {
             Source.DRAWER -> {
                 entries += PixelMenu.Entry("Add to home") {
@@ -1379,8 +1393,18 @@ class LauncherActivity : Activity() {
             }
         }
         entries += PixelMenu.Entry("Edit name & icon") { showEditMenu(view, key) }
-        entries += PixelMenu.Entry("App info") { apps.openAppInfo(key, null) }
-        if (canUninstall(key)) entries += PixelMenu.Entry("Uninstall") { uninstall(key) }
+        entries += PixelMenu.Entry("App info") {
+            if (pinned) {
+                try {
+                    startActivity(Intent(android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.fromParts("package", key.pkg, null)))
+                } catch (e: Exception) {
+                    Pixel.say(this, "Couldn't open app info.")
+                }
+            } else {
+                apps.openAppInfo(key, null)
+            }
+        }
+        if (!pinned && canUninstall(key)) entries += PixelMenu.Entry("Uninstall") { uninstall(key) }
         menu.show(view, entries, view.iconRect())
     }
 
