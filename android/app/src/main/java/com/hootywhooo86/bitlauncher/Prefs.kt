@@ -95,6 +95,11 @@ class Prefs(context: Context) {
         get() = sp.getString("scene", "none")!!
         set(v) = sp.edit().putString("scene", v).apply()
 
+    /** "auto" follows the clock, or a held time of day (see Light.TIMES). */
+    var sceneTime: String
+        get() = sp.getString("sceneTime", "auto")!!
+        set(v) = sp.edit().putString("sceneTime", v).apply()
+
     /** Live weather (Open-Meteo, rough location). Off until turned on. */
     var weather: Boolean
         get() = sp.getBoolean("weather", false)
@@ -164,6 +169,16 @@ class Prefs(context: Context) {
         set(v) = sp.edit().putBoolean("layoutLocked", v).apply()
 
         /** Charging animation on the lock screen: "off" or one of ChargeView.STYLES. */
+    /** What swiping down on home opens: "pixel" (bitlauncher's own) or "shade" (the phone's). */
+    var swipeDown: String
+        get() = sp.getString("swipeDown", "pixel")!!
+        set(v) = sp.edit().putString("swipeDown", v).apply()
+
+    /** Pixel pop-ups for new notifications: "off", "home" or "everywhere" (see NoteCards.POPUPS). */
+    var popups: String
+        get() = sp.getString("popups", "home")!!
+        set(v) = sp.edit().putString("popups", v).apply()
+
     var chargeStyle: String
         get() = sp.getString("chargeStyle", "battery")!!
         set(v) = sp.edit().putString("chargeStyle", v).apply()
@@ -198,12 +213,15 @@ class Prefs(context: Context) {
         .put("hidden", JSONArray(hidden.toList()))
         .put("theme", theme)
         .put("chargeStyle", chargeStyle)
+        .put("swipeDown", swipeDown)
+        .put("popups", popups)
         .put("layoutLocked", layoutLocked)
         .put("shiftSchedule", shiftSchedule)
         .put("shiftDays", JSONArray(shiftDays.toList()))
         .put("shiftStart", shiftStart)
         .put("shiftEnd", shiftEnd)
         .put("scene", scene)
+        .put("sceneTime", sceneTime)
         .put("weather", weather)
         .put("fahrenheit", fahrenheit)
         .put("iconPack", iconPack)
@@ -221,12 +239,15 @@ class Prefs(context: Context) {
         lockDetail = o.optInt("lockDetail", lockDetail)
         theme = o.optString("theme", theme)
         chargeStyle = o.optString("chargeStyle", chargeStyle)
+        swipeDown = o.optString("swipeDown", swipeDown)
+        popups = o.optString("popups", popups)
         layoutLocked = o.optBoolean("layoutLocked", layoutLocked)
         shiftSchedule = o.optBoolean("shiftSchedule", shiftSchedule)
         o.optJSONArray("shiftDays")?.let { a -> shiftDays = (0 until a.length()).map { a.getInt(it) }.toSet() }
         shiftStart = o.optInt("shiftStart", shiftStart)
         shiftEnd = o.optInt("shiftEnd", shiftEnd)
         scene = o.optString("scene", scene)
+        sceneTime = o.optString("sceneTime", sceneTime)
         weather = o.optBoolean("weather", weather)
         fahrenheit = o.optBoolean("fahrenheit", fahrenheit)
         iconPack = o.optString("iconPack", iconPack)

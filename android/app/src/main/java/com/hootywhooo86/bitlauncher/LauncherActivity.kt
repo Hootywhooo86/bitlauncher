@@ -63,6 +63,9 @@ class LauncherActivity : Activity() {
     private lateinit var clock: PixelClockView
     private lateinit var dateLabel: TextView
     private val onNotifications = { refreshDots() }
+    private lateinit var notePanel: NotificationPanel
+    private lateinit var popupLayer: FrameLayout
+    private val onArrival: (Note) -> Unit = { showPopup(it) }
 
     private lateinit var widgetHost: PixelWidgetHost
     private lateinit var widgetManager: AppWidgetManager
@@ -150,10 +153,14 @@ class LauncherActivity : Activity() {
         Shift.current(prefs).let { if (it != mode) switchMode(it) }
         applyScene()
         refreshWeather()
+        Popups.homeShowing = true
+        NotificationHub.onArrival(onArrival)
     }
 
     override fun onPause() {
         super.onPause()
+        Popups.homeShowing = false
+        NotificationHub.offArrival(onArrival)
         menu.dismiss()
     }
 
@@ -193,6 +200,10 @@ class LauncherActivity : Activity() {
 
     private fun closeOverlays(): Boolean {
         var closed = false
+        if (notePanel.isOpen) {
+            notePanel.close()
+            closed = true
+        }
         if (menu.isShowing) {
             menu.dismiss()
             closed = true
@@ -334,6 +345,11 @@ class LauncherActivity : Activity() {
         folderView.onClose = { closeFolder() }
         root.addView(folderView, FrameLayout.LayoutParams(-1, -1))
 
+        notePanel = NotificationPanel(this, icons) { openPhoneShade() }
+        root.addView(notePanel, FrameLayout.LayoutParams(-1, -1))
+        popupLayer = FrameLayout(this)
+        root.addView(popupLayer, FrameLayout.LayoutParams(-1, -2, Gravity.TOP))
+
         root.setOnApplyWindowInsetsListener { _, insets ->
             if (Build.VERSION.SDK_INT >= 30) {
                 val bars = insets.getInsets(WindowInsets.Type.systemBars())
@@ -346,6 +362,8 @@ class LauncherActivity : Activity() {
                 insetBottom = insets.systemWindowInsetBottom
             }
             positionChrome()
+            notePanel.setInsets(insetTop, insetBottom)
+            popupLayer.setPadding(Pixel.dpi(this, 10), insetTop + Pixel.dpi(this, 6), Pixel.dpi(this, 10), 0)
             insets
         }
         buildUndoBar()
@@ -989,6 +1007,7 @@ class LauncherActivity : Activity() {
         scene.visibility = if (key == "none") View.GONE else View.VISIBLE
         scene.scene = key
         scene.accent = prefs.accent
+        scene.timeOfDay = prefs.sceneTime
     }
 
     /** Fetch weather if it's on and stale; then let everything that shows it update. */
@@ -1567,8 +1586,26 @@ class LauncherActivity : Activity() {
         if (Pixel.motion(this)) folderView.popOut { folderView.visibility = View.GONE } else folderView.visibility = View.GONE
     }
 
-    @Suppress("WrongConstant")
+    /** Swipe down on home: bitlauncher's pixel notifications, or the phone's own shade if chosen. */
     private fun openNotifications() {
+        if (prefs.swipeDown == "shade") return openPhoneShade()
+        menu.dismiss()
+        notePanel.accent = prefs.accent
+        notePanel.open()
+    }
+
+    /** A new notification while home is in front: a pixel card slides in at the top. */
+    private fun showPopup(note: Note) {
+        if (prefs.popups == "off" || notePanel.isOpen || !Popups.phoneInUse(this)) return
+        popupLayer.removeAllViews()
+        lateinit var card: PopupCard
+        card = PopupCard(this, icons, note, prefs.accent) { popupLayer.removeView(card) }
+        popupLayer.addView(card, FrameLayout.LayoutParams(minOf(root.width - Pixel.dpi(this, 20), Pixel.dpi(this, 480)).coerceAtLeast(1), -2, Gravity.CENTER_HORIZONTAL))
+        card.show()
+    }
+
+    @Suppress("WrongConstant")
+    private fun openPhoneShade() {
         try {
             val service = getSystemService("statusbar")
             Class.forName("android.app.StatusBarManager").getMethod("expandNotificationsPanel").invoke(service)

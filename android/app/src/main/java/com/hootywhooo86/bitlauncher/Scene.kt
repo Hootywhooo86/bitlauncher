@@ -44,6 +44,10 @@ class SceneView(context: Context) : View(context) {
     var sky: Sky? = null
         set(v) { if (field != v) { field = v; regenerate(); updateAnimation() } }
 
+    /** "auto" follows the clock; "dawn", "day", "dusk" or "night" holds the scene there. */
+    var timeOfDay = "auto"
+        set(v) { if (field != v) { field = v; regenerate() } }
+
     /** Today's sunrise and sunset, if known; otherwise a typical day is assumed for the colours. */
     var sunrise: Long? = null
     var sunset: Long? = null
@@ -188,7 +192,7 @@ class SceneView(context: Context) : View(context) {
         val sceneKey = scene
         val weather = sky
         val now = System.currentTimeMillis()
-        val light = Light.at(now, sunrise, sunset)
+        val light = Light.fixed(timeOfDay) ?: Light.at(now, sunrise, sunset)
         this.light = light
         worker.execute {
             val skyPixels = Painter.sky(w, h, light, weather)
@@ -306,6 +310,18 @@ class SceneView(context: Context) : View(context) {
  */
 data class Light(val day: Float, val warm: Float, val dayProgress: Float, val nightProgress: Float) {
     companion object {
+        /** (key, name) for the scene time setting. */
+        val TIMES = listOf("auto" to "Follow the clock", "dawn" to "Always dawn", "day" to "Always day", "dusk" to "Always dusk", "night" to "Always night")
+
+        /** A held time of day, or null for "auto". */
+        fun fixed(key: String): Light? = when (key) {
+            "dawn" -> Light(0.55f, 1f, 0.04f, 1f)
+            "day" -> Light(1f, 0f, 0.45f, 0f)
+            "dusk" -> Light(0.55f, 1f, 0.96f, 0f)
+            "night" -> Light(0f, 0f, 1f, 0.4f)
+            else -> null
+        }
+
         fun at(now: Long, sunrise: Long?, sunset: Long?): Light {
             val cal = Calendar.getInstance().apply { timeInMillis = now }
             fun today(h: Int, m: Int) = (cal.clone() as Calendar).apply {

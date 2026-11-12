@@ -133,6 +133,12 @@ class SettingsActivity : Activity() {
         for ((key, name) in SceneView.SCENES) {
             body.addView(choice(name.uppercase(), prefs.scene == key) { changed { prefs.scene = key } }.full())
         }
+        if (prefs.scene != "none") {
+            body.addView(note("Time of day. Hold the scene at one time, or let it follow the clock (and the real sunrise and sunset, with weather on)."))
+            for ((key, name) in Light.TIMES) {
+                body.addView(choice(name.uppercase(), prefs.sceneTime == key) { changed { prefs.sceneTime = key } }.full())
+            }
+        }
 
         section("WEATHER")
         body.addView(note("Rain, snow and storms in the scene, and the forecast on Today and the lock screen. Sends only a rough location to Open-Meteo (free, no account). Off, nothing goes online."))
@@ -315,6 +321,27 @@ class SettingsActivity : Activity() {
             choice("ON", prefs.dots) { changed { prefs.dots = true } },
             choice("OFF", !prefs.dots) { changed { prefs.dots = false } },
         ))
+        body.addView(Pixel.label(this, "SWIPE DOWN ON HOME OPENS", 9f, Pixel.MUTED).apply { setPadding(0, Pixel.dpi(context, 14), 0, Pixel.dpi(context, 6)) })
+        row(listOf(
+            choice("PIXEL LIST", prefs.swipeDown == "pixel") { changed { prefs.swipeDown = "pixel" } },
+            choice("PHONE SHADE", prefs.swipeDown == "shade") { changed { prefs.swipeDown = "shade" } },
+        ))
+        body.addView(note("The pixel list: tap to open, swipe sideways to dismiss. PHONE SHADE at its top still gets you Wi-Fi, the flashlight and other quick settings."))
+        body.addView(Pixel.label(this, "PIXEL POP-UPS", 9f, Pixel.MUTED).apply { setPadding(0, Pixel.dpi(context, 14), 0, Pixel.dpi(context, 6)) })
+        for ((key, name) in NoteCards.POPUPS) {
+            body.addView(choice(name.uppercase(), prefs.popups == key) { changed { prefs.popups = key } }.full())
+        }
+        if (prefs.popups == "everywhere" && !Popups.canDrawEverywhere(this)) {
+            body.addView(note("Pop-ups over other apps need Android's \"Display over other apps\" for bitlauncher. Until then they only show on home."))
+            body.addView(Pixel.button(this, "ALLOW DISPLAY OVER APPS", accent) {
+                try {
+                    startActivity(Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION, android.net.Uri.parse("package:$packageName")))
+                } catch (e: Exception) {
+                    Pixel.say(this, "Open Settings, then Apps, then bitlauncher, and allow Display over other apps.")
+                }
+            }.full())
+        }
+        if (prefs.popups != "off") body.addView(note("Pop-ups show for new, important notifications, never while the phone is locked or on Do Not Disturb. Android's own pop-up still shows too, unless you turn off \"Pop on screen\" for an app in its notification settings."))
 
         section("LOCK SCREEN")
         body.addView(note("A pixel clock and your notifications, shown in front of your phone's lock screen. Swipe up to unlock with your own PIN, pattern or fingerprint. It never replaces them."))

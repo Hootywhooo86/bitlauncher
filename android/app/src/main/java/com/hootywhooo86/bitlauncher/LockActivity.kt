@@ -191,6 +191,7 @@ class LockActivity : Activity() {
             root.addView(SceneView(this).apply {
                 scene = prefs.scene
                 this.accent = prefs.accent
+                timeOfDay = prefs.sceneTime
                 sunrise = cached?.sunrise
                 sunset = cached?.sunset
                 sky = cached?.sky

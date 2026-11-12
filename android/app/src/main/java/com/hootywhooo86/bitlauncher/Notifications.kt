@@ -26,6 +26,12 @@ data class Note(
     val groupSummary: Boolean,
     val posted: Long,
     val intent: PendingIntent? = null,
+    /** Can be swiped away (not ongoing, not "no clear"). */
+    val clearable: Boolean = true,
+    /** Goes away by itself once opened. */
+    val autoCancel: Boolean = false,
+    /** Important enough to pop up (default importance or higher, not silent). */
+    val loud: Boolean = true,
 )
 
 /** One row on the lock screen: an app, how many, and whatever text the privacy rules allow. */
@@ -86,6 +92,23 @@ object NotificationHub {
     fun listen(l: () -> Unit) { listeners.add(l) }
     fun unlisten(l: () -> Unit) { listeners.remove(l) }
 
+    private val arrivals = mutableSetOf<(Note) -> Unit>()
+
+    /** Told about each notification worth popping up, as it arrives (not updates of one already here). */
+    fun onArrival(l: (Note) -> Unit) { arrivals.add(l) }
+    fun offArrival(l: (Note) -> Unit) { arrivals.remove(l) }
+
+    /** Should [new] pop up? Only fresh, loud, countable ones: no progress-bar updates, no silent ones. */
+    fun worthPopping(previous: Note?, new: Note): Boolean =
+        NotePrivacy.countable(new) && new.loud && (previous == null || new.posted > previous.posted + 1000) &&
+            (new.title.isNotBlank() || new.text.isNotBlank())
+
+    /** Swipe a notification away (for real: it leaves the phone's shade too). */
+    fun dismiss(key: String) = BitNotificationService.running?.dismiss(key)
+
+    /** Clear everything that can be cleared. */
+    fun dismissAll() = BitNotificationService.running?.dismissAll()
+
     internal fun replaceAll(list: List<Note>) {
         synchronized(notes) {
             notes.clear()
@@ -95,8 +118,9 @@ object NotificationHub {
     }
 
     internal fun put(n: Note) {
-        synchronized(notes) { notes[n.key] = n }
+        val previous = synchronized(notes) { notes.put(n.key, n) }
         changed()
+        if (worthPopping(previous, n)) main.post { arrivals.toList().forEach { it(n) } }
     }
 
     internal fun remove(key: String) {
@@ -132,7 +156,29 @@ object NotificationHub {
 
 /** Reads notifications for dots and the lock screen. Android asks the user before this can run. */
 class BitNotificationService : NotificationListenerService() {
+    companion object {
+        /** The connected service, so the panel can dismiss notifications. */
+        @Volatile
+        var running: BitNotificationService? = null
+            private set
+    }
+
+    fun dismiss(key: String) = try {
+        cancelNotification(key)
+    } catch (e: Exception) {
+    }
+
+    fun dismissAll() = try {
+        cancelAllNotifications()
+    } catch (e: Exception) {
+    }
+
+    private val popups by lazy { OverlayPopups(this) }
+    private val onArrival: (Note) -> Unit = { popups.maybeShow(it) }
+
     override fun onListenerConnected() {
+        running = this
+        NotificationHub.onArrival(onArrival)
         NotificationHub.setConnected(true)
         val all = try {
             activeNotifications?.mapNotNull(::toNote) ?: emptyList()
@@ -142,7 +188,11 @@ class BitNotificationService : NotificationListenerService() {
         NotificationHub.replaceAll(all)
     }
 
-    override fun onListenerDisconnected() = NotificationHub.setConnected(false)
+    override fun onListenerDisconnected() {
+        running = null
+        NotificationHub.offArrival(onArrival)
+        NotificationHub.setConnected(false)
+    }
 
     override fun onNotificationPosted(sbn: StatusBarNotification) {
         toNote(sbn)?.let(NotificationHub::put)
@@ -168,6 +218,15 @@ class BitNotificationService : NotificationListenerService() {
             groupSummary = n.flags and Notification.FLAG_GROUP_SUMMARY != 0,
             posted = sbn.postTime,
             intent = n.contentIntent,
+            clearable = sbn.isClearable,
+            autoCancel = n.flags and Notification.FLAG_AUTO_CANCEL != 0,
+            loud = try {
+                val ranking = Ranking()
+                !currentRanking.getRanking(sbn.key, ranking) ||
+                    (ranking.importance >= android.app.NotificationManager.IMPORTANCE_DEFAULT && ranking.matchesInterruptionFilter())
+            } catch (e: Exception) {
+                true
+            },
         )
     }
 }
