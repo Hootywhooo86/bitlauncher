@@ -71,15 +71,22 @@ class AppList(private val context: Context, val icons: IconCache, private val on
         main.postDelayed(reload, 250)
     }
 
+    /** Re-read everything: after the icon pack or a name changes. */
+    fun reload() = load()
+
     private fun load() {
         worker.execute {
             val density = context.resources.displayMetrics.densityDpi
+            val prefs = Prefs(context)
+            val renamed = prefs.renamed
+            val pack = IconPack.load(context, prefs.iconPack)
             val found = mutableListOf<Pair<AppEntry, LauncherActivityInfo>>()
             for (user in users.userProfiles) {
                 val serial = users.getSerialNumberForUser(user)
                 for (info in launcherApps.getActivityList(null, user)) {
                     val key = AppKey(info.componentName.packageName, info.componentName.className, serial)
-                    found.add(AppEntry(key, info.label.toString().trim()) to info)
+                    val label = renamed[key.id()] ?: info.label.toString().trim()
+                    found.add(AppEntry(key, label) to info)
                 }
             }
             val collator = Collator.getInstance()
@@ -90,8 +97,13 @@ class AppList(private val context: Context, val icons: IconCache, private val on
             // Sprites after the list is up, so the drawer shows straight away.
             var any = false
             for ((entry, info) in sorted) {
-                val stamp = info.firstInstallTime xor lastUpdate(info)
-                if (icons.ensure(entry.key, stamp) { info.getBadgedIcon(density) }) any = true
+                // The pack is part of the stamp, so switching packs re-makes every sprite once.
+                val stamp = (info.firstInstallTime xor lastUpdate(info)) * 31 + (pack?.pkg?.hashCode() ?: 0)
+                val made = icons.ensure(entry.key, stamp) {
+                    pack?.iconFor(info.componentName)?.let { context.packageManager.getUserBadgedIcon(it, info.user) }
+                        ?: info.getBadgedIcon(density)
+                }
+                if (made) any = true
             }
             if (any) main.post(onChanged)
             writeLabelCache(entries)

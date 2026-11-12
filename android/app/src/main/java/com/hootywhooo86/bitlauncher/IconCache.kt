@@ -14,6 +14,9 @@ import java.security.MessageDigest
  */
 class IconCache(context: Context) {
     private val dir = File(context.filesDir, "icons").apply { mkdirs() }
+
+    /** Icons you picked yourself for an app; these win over the app's and the icon pack's. */
+    private val customDir = File(context.filesDir, "custom-icons").apply { mkdirs() }
     private val stamps = context.getSharedPreferences("iconStamps", Context.MODE_PRIVATE)
     private val memory = HashMap<String, Bitmap>()
 
@@ -21,6 +24,9 @@ class IconCache(context: Context) {
     @Synchronized
     fun get(key: AppKey): Bitmap? {
         val id = key.id()
+        memory["custom:$id"]?.let { return it }
+        val custom = fileFor(id, customDir)
+        if (custom.exists()) BitmapFactory.decodeFile(custom.path)?.let { memory["custom:$id"] = it; return it }
         memory[id]?.let { return it }
         val file = fileFor(id)
         if (!file.exists()) return null
@@ -60,9 +66,25 @@ class IconCache(context: Context) {
         edit.apply()
     }
 
-    private fun fileFor(id: String): File {
+    /** Use [drawable] (pixelated) as this app's icon from now on. */
+    @Synchronized
+    fun setCustom(key: AppKey, drawable: Drawable) {
+        val sprite = pixelate(drawable)
+        fileFor(key.id(), customDir).outputStream().use { sprite.compress(Bitmap.CompressFormat.PNG, 100, it) }
+        memory["custom:${key.id()}"] = sprite
+    }
+
+    @Synchronized
+    fun clearCustom(key: AppKey) {
+        fileFor(key.id(), customDir).delete()
+        memory.remove("custom:${key.id()}")
+    }
+
+    fun hasCustom(key: AppKey) = fileFor(key.id(), customDir).exists()
+
+    private fun fileFor(id: String, folder: File = dir): File {
         val hash = MessageDigest.getInstance("SHA-1").digest(id.toByteArray()).joinToString("") { "%02x".format(it) }
-        return File(dir, "$hash.png")
+        return File(folder, "$hash.png")
     }
 
     companion object {

@@ -21,6 +21,7 @@ class SettingsActivity : Activity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        Pixel.load(this)
         prefs = Prefs(this)
         body = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
         val scroll = ScrollView(this).apply {
@@ -91,6 +92,47 @@ class SettingsActivity : Activity() {
                 setOnClickListener { changed { prefs.accent = color } }
             }
         })
+
+        section("THEME")
+        body.addView(note("Recolours panels and text everywhere. All free."))
+        for (t in Pixel.THEMES) {
+            body.addView(LinearLayout(this).apply {
+                gravity = Gravity.CENTER_VERTICAL
+                background = PanelDrawable(context, t.panel, if (prefs.theme == t.key) accent else t.muted)
+                val p = Pixel.dpi(context, 12)
+                setPadding(p, p, p + Pixel.dpi(context, 2), p + Pixel.dpi(context, 2))
+                isClickable = true
+                setOnClickListener {
+                    if (prefs.theme == t.key) return@setOnClickListener
+                    prefs.theme = t.key
+                    prefs.touch()
+                    Pixel.load(context)
+                    recreate()
+                }
+                // Three swatches: background, text, quiet text.
+                for (c in listOf(t.bg, t.ink, t.muted)) addView(View(context).apply {
+                    background = PanelDrawable(context, c, Pixel.SHADOW, shadow = false)
+                }, LinearLayout.LayoutParams(Pixel.dpi(context, 18), Pixel.dpi(context, 18)).apply { rightMargin = Pixel.dpi(context, 6) })
+                addView(Pixel.label(context, t.name.uppercase(), 11f, t.ink).apply {
+                    setPadding(Pixel.dpi(context, 8), 0, 0, 0)
+                }, LinearLayout.LayoutParams(0, -2, 1f))
+                if (prefs.theme == t.key) addView(Pixel.label(context, "ON", 10f, accent))
+            }, LinearLayout.LayoutParams(-1, -2).apply { bottomMargin = Pixel.dpi(this@SettingsActivity, 6) })
+        }
+
+        section("ICON PACK")
+        val packs = IconPack.installed(this)
+        if (packs.isEmpty()) {
+            body.addView(note("No icon packs installed. Any pack made for Nova or similar launchers works; its icons get pixelated to match."))
+        } else {
+            body.addView(note("Icons from the pack, pixelated. Apps it doesn't cover keep their own."))
+            val current = prefs.iconPack.takeIf { p -> packs.any { it.first == p } } ?: ""
+            body.addView(choice("APPS' OWN ICONS", current.isEmpty()) { changed { prefs.iconPack = "" } }.full())
+            for ((pkg, name) in packs) {
+                body.addView(choice(name.uppercase(), current == pkg) { changed { prefs.iconPack = pkg } }.full())
+            }
+        }
+        body.addView(note("To change one app's icon or name, hold it on home and pick Edit name & icon."))
 
         section("HOME CLOCK")
         row(listOf(

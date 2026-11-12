@@ -43,6 +43,7 @@ class BitApp : Application() {
 
     override fun onCreate() {
         super.onCreate()
+        Pixel.load(this)
         syncLockScreen()
     }
 

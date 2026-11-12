@@ -70,6 +70,26 @@ class Prefs(context: Context) {
         get() = sp.getBoolean("doubleTapLock", false)
         set(v) = sp.edit().putBoolean("doubleTapLock", v).apply()
 
+        /** Colour theme key (see Pixel.THEMES). */
+    var theme: String
+        get() = sp.getString("theme", "default")!!
+        set(v) = sp.edit().putString("theme", v).apply()
+
+    /** Package of the icon pack in use, or empty for the apps' own icons. */
+    var iconPack: String
+        get() = sp.getString("iconPack", "")!!
+        set(v) = sp.edit().putString("iconPack", v).apply()
+
+    /** Names you gave apps, by app id. */
+    var renamed: Map<String, String>
+        get() = try {
+            val o = JSONObject(sp.getString("renamed", "{}")!!)
+            o.keys().asSequence().associateWith { o.getString(it) }
+        } catch (e: Exception) {
+            emptyMap()
+        }
+        set(v) = sp.edit().putString("renamed", JSONObject(v as Map<*, *>).toString()).apply()
+
         /** App ids hidden from the drawer. */
     var hidden: Set<String>
         get() = sp.getStringSet("hidden", emptySet())!!.toSet()
@@ -98,6 +118,9 @@ class Prefs(context: Context) {
         .put("lockScreen", lockScreen)
         .put("lockDetail", lockDetail)
         .put("hidden", JSONArray(hidden.toList()))
+        .put("theme", theme)
+        .put("iconPack", iconPack)
+        .put("renamed", JSONObject(renamed as Map<*, *>))
 
     fun restore(o: JSONObject) {
         iconSize = o.optInt("iconSize", iconSize)
@@ -109,6 +132,9 @@ class Prefs(context: Context) {
         dots = o.optBoolean("dots", dots)
         lockScreen = o.optBoolean("lockScreen", lockScreen)
         lockDetail = o.optInt("lockDetail", lockDetail)
+        theme = o.optString("theme", theme)
+        iconPack = o.optString("iconPack", iconPack)
+        o.optJSONObject("renamed")?.let { r -> renamed = r.keys().asSequence().associateWith { r.getString(it) } }
         o.optJSONArray("hidden")?.let { a -> hidden = (0 until a.length()).map { a.getString(it) }.toSet() }
         touch()
     }

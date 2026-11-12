@@ -15,12 +15,36 @@ import android.view.animation.PathInterpolator
 import android.widget.TextView
 import android.widget.Toast
 
+/**
+ * A palette: background, panel, text and quiet text. The accent is chosen separately, and the
+ * dark outline around icons ([Pixel.SHADOW]) never changes, so every theme keeps icons legible.
+ */
+class PixelTheme(val key: String, val name: String, val bg: Int, val panel: Int, val ink: Int, val muted: Int)
+
 /** The family look: navy, ink, muted grey, one accent the user picks. Colour only for meaning. */
 object Pixel {
-    const val BG = 0xFF0B0B16.toInt()
-    const val PANEL = 0xFF141428.toInt()
-    const val INK = 0xFFF4F1FF.toInt()
-    const val MUTED = 0xFF9A97B8.toInt()
+    /** Every theme is free. Default first. */
+    val THEMES = listOf(
+        PixelTheme("default", "128bit", 0xFF0B0B16.toInt(), 0xFF141428.toInt(), 0xFFF4F1FF.toInt(), 0xFF9A97B8.toInt()),
+        PixelTheme("gameboy", "Game Boy", 0xFF0F380F.toInt(), 0xFF1F4A1F.toInt(), 0xFFC4DF6B.toInt(), 0xFF8BAC0F.toInt()),
+        PixelTheme("nes", "NES", 0xFF0A0A0A.toInt(), 0xFF24245C.toInt(), 0xFFFCFCFC.toInt(), 0xFFA4A4A4.toInt()),
+        PixelTheme("pico8", "PICO-8", 0xFF1D2B53.toInt(), 0xFF2E1F47.toInt(), 0xFFFFF1E8.toInt(), 0xFFC2C3C7.toInt()),
+        PixelTheme("amber", "CRT Amber", 0xFF120900.toInt(), 0xFF261600.toInt(), 0xFFFFB000.toInt(), 0xFFB37A00.toInt()),
+    )
+
+    var theme: PixelTheme = THEMES[0]
+        private set
+
+    /** Pick up the saved theme; screens call this when they start. */
+    fun load(context: Context) {
+        val key = Prefs(context).theme
+        theme = THEMES.firstOrNull { it.key == key } ?: THEMES[0]
+    }
+
+    val BG: Int get() = theme.bg
+    val PANEL: Int get() = theme.panel
+    val INK: Int get() = theme.ink
+    val MUTED: Int get() = theme.muted
     const val SHADOW = 0xFF05050B.toInt()
 
     /** Free accent colours. The first is the family violet. */

@@ -8,6 +8,7 @@ import android.content.Intent
 import android.content.pm.ApplicationInfo
 import android.content.pm.LauncherApps
 import android.content.pm.PackageManager
+import android.graphics.BitmapFactory
 import android.graphics.Rect
 import android.net.Uri
 import android.os.Build
@@ -52,6 +53,9 @@ class LauncherActivity : Activity() {
     private var pendingWidgetId = -1
 
     private var openFolder: FolderItem? = null
+    private var appliedTheme = ""
+    private var appliedPack = ""
+    private var editingIconFor: AppKey? = null
     private var appliedPrefs = -1
     private var firstRun = false
     private var insetTop = 0
@@ -61,7 +65,10 @@ class LauncherActivity : Activity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        Pixel.load(this)
         prefs = Prefs(this)
+        appliedTheme = prefs.theme
+        appliedPack = prefs.iconPack
         store = LayoutStore(this)
         icons = IconCache(this)
         usage = Usage(this)
@@ -330,6 +337,16 @@ class LauncherActivity : Activity() {
 
     private fun applyPrefs() {
         appliedPrefs = prefs.version
+        if (prefs.theme != appliedTheme) {
+            // Every panel is coloured when it's made: simplest and surest to start fresh.
+            Pixel.load(this)
+            recreate()
+            return
+        }
+        if (prefs.iconPack != appliedPack) {
+            appliedPack = prefs.iconPack
+            apps.reload()
+        }
         refreshDots()
         menu = PixelMenu(this, prefs.accent)
         if (layout.grid != prefs.grid) {
@@ -695,6 +712,87 @@ class LauncherActivity : Activity() {
         menu.show(view, entries, view.iconRect())
     }
 
+    // ---------------------------------------------------------------- your names and icons
+
+    private fun showEditMenu(view: AppIconView, key: AppKey) {
+        val entries = mutableListOf(
+            PixelMenu.Entry("Rename") { renameApp(key) },
+            PixelMenu.Entry("Pick icon from photos") {
+                editingIconFor = key
+                val pick = Intent(Intent.ACTION_OPEN_DOCUMENT).addCategory(Intent.CATEGORY_OPENABLE).setType("image/*")
+                try {
+                    @Suppress("DEPRECATION")
+                    startActivityForResult(pick, REQ_ICON)
+                } catch (e: Exception) {
+                    Pixel.say(this, "No photo picker found on this phone.")
+                }
+            },
+        )
+        if (key.id() in prefs.renamed || icons.hasCustom(key)) entries += PixelMenu.Entry("Reset name & icon") {
+            prefs.renamed = prefs.renamed - key.id()
+            icons.clearCustom(key)
+            apps.reload()
+        }
+        menu.show(view, entries, view.iconRect())
+    }
+
+    private fun renameApp(key: AppKey) {
+        val field = android.widget.EditText(this).apply {
+            setText(apps.label(key))
+            setSelectAllOnFocus(true)
+            isSingleLine = true
+            setTextColor(Pixel.INK)
+            background = PanelDrawable(context, Pixel.BG, prefs.accent)
+            val p = Pixel.dpi(context, 12)
+            setPadding(p, p, p, p)
+        }
+        val dialog = android.app.Dialog(this)
+        dialog.requestWindowFeature(android.view.Window.FEATURE_NO_TITLE)
+        val box = android.widget.LinearLayout(this).apply {
+            orientation = android.widget.LinearLayout.VERTICAL
+            background = PanelDrawable(context, Pixel.PANEL, prefs.accent)
+            val p = Pixel.dpi(context, 18)
+            setPadding(p, p, p, p)
+            addView(Pixel.label(context, "RENAME", 12f, prefs.accent).apply { setPadding(0, 0, 0, Pixel.dpi(context, 12)) })
+            addView(field)
+            addView(Pixel.button(context, "SAVE", prefs.accent) {
+                val name = field.text.toString().trim()
+                prefs.renamed = if (name.isEmpty()) prefs.renamed - key.id() else prefs.renamed + (key.id() to name)
+                dialog.dismiss()
+                apps.reload()
+            }, android.widget.LinearLayout.LayoutParams(-1, -2).apply { topMargin = Pixel.dpi(context, 12) })
+        }
+        dialog.setContentView(box)
+        dialog.window?.setBackgroundDrawable(android.graphics.drawable.ColorDrawable(0))
+        dialog.window?.setLayout((resources.displayMetrics.widthPixels * 0.85f).toInt().coerceAtMost(Pixel.dpi(this, 420)), -2)
+        dialog.window?.setSoftInputMode(android.view.WindowManager.LayoutParams.SOFT_INPUT_STATE_VISIBLE)
+        dialog.show()
+        field.requestFocus()
+    }
+
+    /** A picked photo becomes the app's icon: scaled down on load, then pixelated like any other. */
+    private fun useIconFrom(uri: Uri) {
+        val key = editingIconFor ?: return
+        editingIconFor = null
+        try {
+            val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+            contentResolver.openInputStream(uri)?.use { BitmapFactory.decodeStream(it, null, bounds) }
+            var sample = 1
+            while (maxOf(bounds.outWidth, bounds.outHeight) / (sample * 2) >= 192) sample *= 2
+            val bmp = contentResolver.openInputStream(uri)?.use {
+                BitmapFactory.decodeStream(it, null, BitmapFactory.Options().apply { inSampleSize = sample })
+            } ?: throw IllegalArgumentException()
+            // Centre-crop to a square so a photo fills the icon.
+            val side = minOf(bmp.width, bmp.height)
+            val square = android.graphics.Bitmap.createBitmap(bmp, (bmp.width - side) / 2, (bmp.height - side) / 2, side, side)
+            icons.setCustom(key, android.graphics.drawable.BitmapDrawable(resources, square))
+            rebuild()
+            drawer.refresh()
+        } catch (e: Exception) {
+            Pixel.say(this, "That picture couldn't be read. Try a JPG or PNG.")
+        }
+    }
+
     // ---------------------------------------------------------------- search
 
     /** Everything search can do besides open apps, best first. */
@@ -1002,6 +1100,7 @@ class LauncherActivity : Activity() {
                 rebuild()
             }
         }
+        entries += PixelMenu.Entry("Edit name & icon") { showEditMenu(view, key) }
         entries += PixelMenu.Entry("App info") { apps.openAppInfo(key, null) }
         if (canUninstall(key)) entries += PixelMenu.Entry("Uninstall") { uninstall(key) }
         menu.show(view, entries, view.iconRect())
@@ -1498,6 +1597,7 @@ class LauncherActivity : Activity() {
                 Pixel.say(this, "The widget wasn't added because permission was declined.")
             }
             REQ_CONFIG -> if (resultCode == RESULT_OK) placeWidget() else cancelWidget()
+            REQ_ICON -> data?.data?.takeIf { resultCode == RESULT_OK }?.let { useIconFrom(it) }
         }
     }
 
@@ -1512,5 +1612,6 @@ class LauncherActivity : Activity() {
     companion object {
         private const val REQ_BIND = 11
         private const val REQ_CONFIG = 12
+        private const val REQ_ICON = 13
     }
 }
