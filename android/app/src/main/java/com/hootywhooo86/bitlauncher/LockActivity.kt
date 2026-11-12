@@ -173,20 +173,18 @@ class LockActivity : Activity() {
         root.content = content
 
         clock = PixelClockView(this, blink = true).apply { this.accent = accent }
-        content.addView(clock, LinearLayout.LayoutParams(-1, -2).apply {
-            leftMargin = Pixel.dpi(this@LockActivity, 24)
-            rightMargin = Pixel.dpi(this@LockActivity, 24)
-        })
+        // On a big screen (an unfolded Fold) the clock and cards keep a readable size.
+        val screenW = resources.displayMetrics.widthPixels
+        val clockW = minOf(screenW - Pixel.dpi(this, 48), Pixel.dpi(this, 400))
+        val listW = minOf(screenW - Pixel.dpi(this, 40), Pixel.dpi(this, 520))
+        content.addView(clock, LinearLayout.LayoutParams(clockW, -2))
         date = Pixel.label(this, "", 11f, Pixel.MUTED).apply {
             gravity = Gravity.CENTER
             setPadding(0, Pixel.dpi(context, 14), 0, Pixel.dpi(context, 28))
         }
         content.addView(date, LinearLayout.LayoutParams(-1, -2))
         list = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
-        content.addView(list, LinearLayout.LayoutParams(-1, -2).apply {
-            leftMargin = Pixel.dpi(this@LockActivity, 20)
-            rightMargin = Pixel.dpi(this@LockActivity, 20)
-        })
+        content.addView(list, LinearLayout.LayoutParams(listW, -2))
         root.addView(content, FrameLayout.LayoutParams(-1, -2, Gravity.TOP))
 
         hint = Pixel.label(this, "SWIPE UP TO UNLOCK", 10f, Pixel.INK).apply { gravity = Gravity.CENTER }

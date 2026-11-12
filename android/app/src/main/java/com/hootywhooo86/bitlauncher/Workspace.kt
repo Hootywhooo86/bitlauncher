@@ -132,38 +132,64 @@ class Workspace(context: Context) : ViewGroup(context) {
 
     val pageCount: Int get() = childCount
 
+    /**
+     * Pages on screen at once: 1 on a phone, 2 side by side on a wide screen (an unfolded
+     * Pixel Fold), like the Pixel launcher. Swiping then moves a whole pair.
+     */
+    var panes = 1
+        set(v) {
+            if (field == v) return
+            field = v
+            currentPage = (currentPage / v) * v
+            requestLayout()
+        }
+
+    /** The space between the two pages of a pair. */
+    var gutter = 0
+
+    /** Screens to swipe through: pairs of pages when there are two panes. */
+    val screenCount: Int get() = (childCount + panes - 1) / panes
+
     fun page(i: Int): CellLayout? = getChildAt(i) as? CellLayout
+
+    /** Pages currently on screen. */
+    fun visiblePages(): IntRange = currentPage until minOf(currentPage + panes, childCount)
+
+    private fun paneWidth() = (width - paddingLeft - paddingRight - gutter * (panes - 1)) / panes
 
     override fun onMeasure(widthMeasureSpec: Int, heightMeasureSpec: Int) {
         val w = MeasureSpec.getSize(widthMeasureSpec)
         val h = MeasureSpec.getSize(heightMeasureSpec)
         setMeasuredDimension(w, h)
-        val cw = MeasureSpec.makeMeasureSpec(w - paddingLeft - paddingRight, MeasureSpec.EXACTLY)
+        val pw = (w - paddingLeft - paddingRight - gutter * (panes - 1)) / panes
+        val cw = MeasureSpec.makeMeasureSpec(pw, MeasureSpec.EXACTLY)
         val ch = MeasureSpec.makeMeasureSpec(h - paddingTop - paddingBottom, MeasureSpec.EXACTLY)
         for (i in 0 until childCount) getChildAt(i).measure(cw, ch)
     }
 
     override fun onLayout(changed: Boolean, l: Int, t: Int, r: Int, b: Int) {
+        val pw = paneWidth()
         for (i in 0 until childCount) {
-            val left = i * width + paddingLeft
-            getChildAt(i).layout(left, paddingTop, left + width - paddingLeft - paddingRight, b - t - paddingBottom)
+            val left = (i / panes) * width + paddingLeft + (i % panes) * (pw + gutter)
+            getChildAt(i).layout(left, paddingTop, left + pw, b - t - paddingBottom)
         }
-        if (scroller.isFinished) scrollTo(currentPage * width, 0)
+        if (scroller.isFinished) scrollTo((currentPage / panes) * width, 0)
     }
 
     fun snapTo(page: Int, animate: Boolean = true, velocityX: Float = 0f) {
-        val target = page.coerceIn(0, (childCount - 1).coerceAtLeast(0))
+        val target = ((page.coerceIn(0, (childCount - 1).coerceAtLeast(0))) / panes) * panes
         val changed = target != currentPage
         currentPage = target
+        val screenX = (target / panes) * width
         if (animate && width > 0) {
             // A fast fling lands quickly; a slow drag glides the rest of the way.
-            val dx = target * width - scrollX
+            val dx = screenX - scrollX
             val duration = Ease.finishDuration(abs(dx).toFloat(), width.toFloat(), abs(velocityX))
             scroller.startScroll(scrollX, 0, dx, 0, duration.toInt())
             postInvalidateOnAnimation()
         } else {
             scroller.forceFinished(true)
-            scrollTo(target * width, 0)
+            scrollTo(screenX, 0)
         }
         if (changed) listener?.onPageChanged(target)
     }
@@ -223,7 +249,7 @@ class Workspace(context: Context) : ViewGroup(context) {
                 }
                 if (mode == 1) {
                     // Past the first or last page, resist: the page moves a third as far as the finger.
-                    val maxX = ((childCount - 1) * width).coerceAtLeast(0)
+                    val maxX = ((screenCount - 1) * width).coerceAtLeast(0)
                     var delta = lastX - e.x
                     if (scrollX < 0 || scrollX > maxX) delta /= 3f
                     scrollTo((scrollX + delta).toInt().coerceIn(-width / 4, maxX + width / 4), 0)
@@ -240,9 +266,9 @@ class Workspace(context: Context) : ViewGroup(context) {
                 val vy = v?.yVelocity ?: 0f
                 if (mode == 1) {
                     val page = when {
-                        vx < -minFling -> currentPage + 1
-                        vx > minFling -> currentPage - 1
-                        else -> (scrollX + width / 2) / width.coerceAtLeast(1)
+                        vx < -minFling -> currentPage + panes
+                        vx > minFling -> currentPage - panes
+                        else -> ((scrollX + width / 2) / width.coerceAtLeast(1)) * panes
                     }
                     snapTo(page, velocityX = vx)
                 } else if (mode == 2) {

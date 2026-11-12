@@ -114,6 +114,21 @@ class LauncherActivity : Activity() {
         menu.dismiss()
     }
 
+    /** Folding or unfolding (or rotating) re-lays out home in place; nothing is reloaded. */
+    override fun onConfigurationChanged(newConfig: android.content.res.Configuration) {
+        super.onConfigurationChanged(newConfig)
+        menu.dismiss()
+        positionChrome()
+        rebuild()
+    }
+
+    /**
+     * Two pages side by side when the screen is wide and not tall, like an unfolded Pixel Fold.
+     * A phone, or a tablet held upright, gets one.
+     */
+    private fun panesFor(c: android.content.res.Configuration): Int =
+        if (c.screenWidthDp >= 600 && c.screenWidthDp >= c.screenHeightDp * 0.9f) 2 else 1
+
     override fun onDestroy() {
         super.onDestroy()
         apps.stop()
@@ -167,13 +182,14 @@ class LauncherActivity : Activity() {
     private fun buildViews() {
         root = FrameLayout(this)
         workspace = Workspace(this)
+        workspace.panes = panesFor(resources.configuration)
         workspace.listener = object : Workspace.Listener {
             override fun onDrawerDrag(px: Float) = dragDrawer(px)
             override fun onDrawerRelease(px: Float, velocityY: Float) = releaseDrawer(velocityY)
             override fun onSwipeDown() = openNotifications()
             override fun onEmptyLongPress(x: Float, y: Float) = showHomeMenu(x - workspace.scrollX, y)
             override fun onPageChanged(page: Int) {
-                dots.current = page
+                dots.current = page / workspace.panes
             }
         }
         root.addView(workspace, FrameLayout.LayoutParams(-1, -1))
@@ -258,16 +274,29 @@ class LauncherActivity : Activity() {
     /** Size the dock and pad the pages around the system bars. */
     private fun positionChrome() {
         val gap = Pixel.dpi(this, 8)
+        val screenW = resources.displayMetrics.widthPixels
+        val panes = panesFor(resources.configuration)
+        val panesChanged = panes != workspace.panes
+        workspace.panes = panes
+        workspace.gutter = if (workspace.panes > 1) Pixel.dpi(this, 32) else 0
+        // One page's width: everything on home is sized to this, so an unfolded phone looks
+        // like two phones side by side, not one phone stretched.
+        val paneW = (screenW - gap * 2 - workspace.gutter * (workspace.panes - 1)) / workspace.panes
+
         val dockHeight = Pixel.dpi(this, prefs.iconDp() + 28)
+        val dockSlotW = Pixel.dpi(this, prefs.iconDp() + 64)
         (dock.layoutParams as FrameLayout.LayoutParams).apply {
             height = dockHeight
+            // Centred, and no wider than its icons need.
+            width = minOf(screenW - gap * 2, layout.grid.dockSlots * dockSlotW)
+            gravity = Gravity.BOTTOM or Gravity.CENTER_HORIZONTAL
             setMargins(gap, 0, gap, insetBottom + gap)
         }
         (dots.layoutParams as FrameLayout.LayoutParams).bottomMargin = insetBottom + gap + dockHeight
         (removeBar.layoutParams as FrameLayout.LayoutParams).topMargin = insetTop
 
-        // Clock: 55% of the width, so each block is a whole number of pixels.
-        val clockWidth = (resources.displayMetrics.widthPixels * 0.55f).toInt()
+        // Clock: 55% of a page's width, so each block is a whole number of pixels.
+        val clockWidth = (paneW * 0.55f).toInt()
         val block = clockWidth / (PixelGlyphs.CLOCK_W + 1)
         (clock.layoutParams as android.widget.LinearLayout.LayoutParams).width = block * (PixelGlyphs.CLOCK_W + 1)
         (header.layoutParams as FrameLayout.LayoutParams).topMargin = insetTop + gap * 2
@@ -277,12 +306,16 @@ class LauncherActivity : Activity() {
 
         workspace.setPadding(gap, insetTop + gap + headerHeight, gap, insetBottom + gap * 2 + dockHeight + Pixel.dpi(this, 20))
         header.requestLayout()
+        // A wide screen gets more drawer columns rather than bigger gaps.
+        val drawerCols = maxOf(layout.cols(), screenW / Pixel.dpi(this, prefs.iconDp() + 56))
+        drawer.setColumns(if (workspace.panes > 1) drawerCols else layout.cols())
         drawer.setPadding(0, insetTop, 0, 0)
         drawer.setBottomInset(insetBottom)
         folderView.setPadding(0, insetTop, 0, insetBottom)
         dock.requestLayout()
         dots.requestLayout()
         removeBar.requestLayout()
+        if (panesChanged && ::apps.isInitialized) rebuild()
     }
 
     private fun applyPrefs() {
@@ -322,9 +355,11 @@ class LauncherActivity : Activity() {
             page.tag = pageIndex
             workspace.addView(page)
         }
+        // Two panes: a lone last page gets an empty partner, ready to drop things on.
+        while (workspace.pageCount % workspace.panes != 0) workspace.addView(CellLayout(this, layout.cols(), layout.rows()))
         // Forget views for widgets that are gone.
         widgetViews.keys.retainAll(liveWidgets)
-        workspace.snapTo(keepPage.coerceAtMost(layout.pages.size - 1), animate = false)
+        workspace.snapTo(keepPage.coerceAtMost(workspace.pageCount - 1), animate = false)
 
         dock.removeAllViews()
         dock.slots = layout.grid.dockSlots
@@ -338,10 +373,9 @@ class LauncherActivity : Activity() {
         }
 
         dots.accent = accent
-        dots.count = layout.pages.size
-        dots.current = workspace.currentPage
+        dots.count = workspace.screenCount
+        dots.current = workspace.currentPage / workspace.panes
         drawer.setAccent(accent)
-        drawer.setColumns(layout.cols())
         drawer.setApps(visibleApps())
         folderView.setAccent(accent)
         emptyHint.visibility = if (layout.pages.all { it.isEmpty() }) View.VISIBLE else View.GONE
@@ -823,14 +857,11 @@ class LauncherActivity : Activity() {
     }
 
     private fun flipPageDuringDrag() {
-        val next = workspace.currentPage + flipDirection
+        val next = workspace.currentPage + flipDirection * workspace.panes
         if (next < 0) return
-        if (next >= layout.pages.size) {
-            // Dragging past the last page makes a new one.
-            layout.pages.add(mutableListOf())
-            workspace.addView(CellLayout(this, layout.cols(), layout.rows()))
-            dots.count = layout.pages.size
-        }
+        // Dragging past the last screen makes a new one (a page, or a pair of pages).
+        while (next + workspace.panes > workspace.pageCount) workspace.addView(CellLayout(this, layout.cols(), layout.rows()))
+        dots.count = workspace.screenCount
         workspace.snapTo(next)
         root.postDelayed(pageFlip, 900)
     }
@@ -838,19 +869,30 @@ class LauncherActivity : Activity() {
     private fun targetAt(x: Float, y: Float, info: DragInfo): DropTarget {
         if (removeBar.visibility == View.VISIBLE && y < removeBar.bottom) return DropTarget.Remove
         if (y >= dock.top && y <= dock.bottom) return DropTarget.Dock(dock.slotAt(x - dock.left))
-        val page = workspace.page(workspace.currentPage) ?: return DropTarget.None
-        val loc = IntArray(2)
-        page.getLocationInWindow(loc)
         val rootLoc = IntArray(2)
         root.getLocationInWindow(rootLoc)
-        val px = x - (loc[0] - rootLoc[0])
+        val loc = IntArray(2)
+        // With two pages on screen, the one under the finger (or the nearer one, over the gutter).
+        val index = workspace.visiblePages().minByOrNull { i ->
+            val p = workspace.page(i)!!
+            p.getLocationInWindow(loc)
+            val left = loc[0] - rootLoc[0]
+            when {
+                x < left -> left - x
+                x > left + p.width -> x - left - p.width
+                else -> 0f
+            }
+        } ?: return DropTarget.None
+        val page = workspace.page(index)!!
+        page.getLocationInWindow(loc)
+        val px = (x - (loc[0] - rootLoc[0])).coerceIn(0f, page.width - 1f)
         val py = y - (loc[1] - rootLoc[1])
         if (py < 0 || py > page.height) return DropTarget.None
         var (cx, cy) = page.cellAt(px, py)
         val (w, h) = info.size
         cx = (cx - (w - 1) / 2).coerceIn(0, layout.cols() - w)
         cy = (cy - (h - 1) / 2).coerceIn(0, layout.rows() - h)
-        return DropTarget.Cell(workspace.currentPage, cx, cy)
+        return DropTarget.Cell(index, cx, cy)
     }
 
     private fun showTarget(target: DropTarget, info: DragInfo) {
@@ -933,6 +975,7 @@ class LauncherActivity : Activity() {
                 return true
             }
             is DropTarget.Cell -> {
+                while (target.page >= layout.pages.size) layout.pages.add(mutableListOf())
                 val (w, h) = info.size
                 val moving = info.item
                 val occupant = layout.itemAt(target.page, target.x, target.y)?.takeIf { it !== moving }
