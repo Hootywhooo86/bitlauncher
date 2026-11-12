@@ -24,9 +24,10 @@ object FolderArt {
         "tv" to "CRT TV",
     )
 
-    private val p = Paint().apply { isAntiAlias = false }
-    private val sprite = Paint().apply { isFilterBitmap = false; isAntiAlias = false }
-    private val dst = RectF()
+    // Made on first draw, so the style list can be read anywhere (tests included).
+    private val p by lazy { Paint().apply { isAntiAlias = false } }
+    private val sprite by lazy { Paint().apply { isFilterBitmap = false; isAntiAlias = false } }
+    private val dst by lazy { RectF() }
 
     /** Everything a folder icon needs to draw itself. */
     class Look(
