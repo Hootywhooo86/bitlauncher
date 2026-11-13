@@ -19,12 +19,18 @@ object LockLooks {
         Look("arcade", "Arcade", "CRT scanlines, PLAYER 1, notifications as a high-score table."),
         Look("pocket", "Pocket", "Everything on a little LCD screen, dot-matrix and all."),
         Look("minimal", "Minimal", "A giant clock and one line saying what's new."),
+        Look("terminal", "Terminal", "A command line: notifications as log lines, a blinking block cursor."),
+        Look("desktop", "Desktop", "A retro computer desktop: each notification is a little window."),
+        Look("departures", "Departures", "A station board: when it came in, from which app, and what it says."),
     )
 
     fun hint(key: String) = when (key) {
         "rpg" -> "SWIPE UP TO CONTINUE"
         "arcade" -> "SWIPE UP TO START"
         "pocket" -> "SWIPE UP TO POWER ON"
+        "terminal" -> "> SWIPE UP TO LOG IN"
+        "desktop" -> "SWIPE UP TO START"
+        "departures" -> "SWIPE UP TO BOARD"
         else -> "SWIPE UP TO UNLOCK"
     }
 
@@ -168,6 +174,29 @@ class MoreArrow(context: Context, private val color: Int) : View(context) {
     override fun onDraw(c: Canvas) {
         for (row in 0 until 3) c.drawRect(u * row, u * row, u * (5 - row), u * (row + 1), p)
     }
+
+    override fun onAttachedToWindow() {
+        super.onAttachedToWindow()
+        if (Pixel.motion(context)) pulse.start()
+    }
+
+    override fun onDetachedFromWindow() {
+        super.onDetachedFromWindow()
+        pulse.cancel()
+    }
+}
+
+/** A text cursor: a solid block that fades in and out. */
+class BlinkBlock(context: Context, private val color: Int) : View(context) {
+    private val p = Paint().apply { this.color = color }
+    private val pulse = ValueAnimator.ofFloat(1f, 0f).apply {
+        duration = 530
+        repeatMode = ValueAnimator.REVERSE
+        repeatCount = ValueAnimator.INFINITE
+        addUpdateListener { alpha = it.animatedValue as Float }
+    }
+
+    override fun onDraw(c: Canvas) = c.drawRect(0f, 0f, width.toFloat(), height.toFloat(), p)
 
     override fun onAttachedToWindow() {
         super.onAttachedToWindow()

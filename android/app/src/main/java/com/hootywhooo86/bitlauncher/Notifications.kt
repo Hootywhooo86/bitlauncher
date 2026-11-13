@@ -35,7 +35,7 @@ data class Note(
 )
 
 /** One row on the lock screen: an app, how many, and whatever text the privacy rules allow. */
-data class LockLine(val pkg: String, val user: Long, val count: Int, val title: String?, val text: String?, val intent: PendingIntent?)
+data class LockLine(val pkg: String, val user: Long, val count: Int, val title: String?, val text: String?, val intent: PendingIntent?, val posted: Long = 0L)
 
 object NotePrivacy {
     const val APPS_ONLY = 0
@@ -64,7 +64,7 @@ object NotePrivacy {
                         newest.publicTitle?.takeIf { it.isNotBlank() } to newest.publicText?.takeIf { level == FULL && it.isNotBlank() }
                     else -> newest.title.takeIf { it.isNotBlank() } to newest.text.takeIf { level == FULL && it.isNotBlank() }
                 }
-                LockLine(app.first, app.second, list.size, title, text, newest.intent) to newest.posted
+                LockLine(app.first, app.second, list.size, title, text, newest.intent, newest.posted) to newest.posted
             }
             .sortedByDescending { it.second }
             .map { it.first }

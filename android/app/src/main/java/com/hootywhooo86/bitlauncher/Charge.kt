@@ -13,13 +13,19 @@ import android.view.View
 class ChargeView(context: Context) : View(context) {
     companion object {
         /** (key, name). */
-        val STYLES = listOf("battery" to "Battery", "hearts" to "Heart containers", "xp" to "XP bar", "train" to "Freight train")
+        val STYLES = listOf(
+            "battery" to "Battery", "hearts" to "Heart containers", "xp" to "XP bar", "train" to "Freight train",
+            "potion" to "Potion", "plant" to "Plant", "blocks" to "Block stack",
+        )
         private const val GRID_W = 80 // virtual pixels across
         private const val GRID_H = 26
 
         private val HEART = arrayOf(".##.##.", "#######", "#######", ".#####.", "..###..", "...#...")
         private val L = arrayOf("#..", "#..", "#..", "#..", "###")
         private val V = arrayOf("#.#", "#.#", "#.#", "#.#", ".#.")
+        private val LEAF_L = arrayOf("##.", ".##")
+        private val LEAF_R = arrayOf(".##", "##.")
+        private val FLOWER = arrayOf(".#.#.", "#####", ".###.", "#####", ".#.#.")
     }
 
     var style = "battery"
@@ -91,6 +97,9 @@ class ChargeView(context: Context) : View(context) {
             "hearts" -> hearts(blink)
             "xp" -> xp()
             "train" -> train()
+            "potion" -> potion()
+            "plant" -> plant()
+            "blocks" -> blocks()
             else -> battery(blink)
         }
         canvas = null
@@ -159,6 +168,113 @@ class ChargeView(context: Context) : View(context) {
         px(bx + 1, by + 1, fill, 1f, withAlpha(0xFFFFFFFF.toInt(), 80))
         // Tick marks every 10%.
         for (i in 1 until 10) px(bx + 1 + i * 5.2f, by + 8, 0.5f, 2f, Pixel.MUTED)
+    }
+
+    /** A round flask filling up; bubbles rise through it while charging. */
+    private fun potion() {
+        val cx = 40f
+        val top = 2f
+        // Neck and cork.
+        px(cx - 3, top, 6f, 2f, 0xFF9A6B3F.toInt())
+        px(cx - 3, top + 2, 1f, 5f, Pixel.INK)
+        px(cx + 2, top + 2, 1f, 5f, Pixel.INK)
+        // The bulb: rows of a circle, 20 wide, 16 tall.
+        val rows = 16
+        val bulbTop = top + 7
+        val fillRows = (rows * level / 100f).toInt()
+        for (r in 0 until rows) {
+            val dy = r - rows / 2f + 0.5f
+            val half = kotlin.math.sqrt((rows / 2f) * (rows / 2f) - dy * dy) * 1.25f
+            val y = bulbTop + r
+            px(cx - half - 1, y, 1f, 1f, Pixel.INK)
+            px(cx + half, y, 1f, 1f, Pixel.INK)
+            val filled = r >= rows - fillRows
+            val color = if (filled) (if (r == rows - fillRows) blend(accent, 0xFFFFFFFF.toInt(), 0.35f) else accent) else withAlpha(Pixel.INK, 25)
+            px(cx - half, y, half * 2, 1f, color)
+        }
+        px(cx - 6, bulbTop + rows, 12f, 1f, Pixel.INK)
+        // Shine on the glass.
+        px(cx - 6, bulbTop + 3, 1f, 3f, withAlpha(0xFFFFFFFF.toInt(), 120))
+        if (charging && fillRows > 2) for (k in 0 until 3) {
+            val age = (tick + k * 4) % 12
+            val y = bulbTop + rows - 2 - age
+            if (y > bulbTop + rows - fillRows) px(cx - 4 + k * 4 + (if (age % 4 < 2) 0 else 1), y, 1f, 1f, withAlpha(0xFFFFFFFF.toInt(), 170))
+        }
+        // The level beside it, in blocky digits.
+        digits(level, 66f, 9f)
+    }
+
+    /** A sprout that grows with the charge: leaves every 20%, a flower when it's full. Sways while charging. */
+    private fun plant() {
+        val base = 23f
+        val cx = 40f
+        // Pot.
+        px(cx - 6, base - 4, 12f, 1f, 0xFF9A5B3A.toInt())
+        px(cx - 5, base - 3, 10f, 3f, 0xFF7E4A2F.toInt())
+        px(cx - 6, base, 12f, 1f, Pixel.SHADOW)
+        val green = 0xFF5FAF4E.toInt()
+        val height = (2 + 16 * level / 100f).toInt()
+        val sway = if (charging && Pixel.motion(context)) (if ((tick / 4) % 2 == 0) 0f else 1f) else 0f
+        for (h in 0 until height) {
+            val x = cx + (if (h > height / 2) sway else 0f)
+            px(x, base - 5 - h, 1f, 1f, green)
+        }
+        val leaves = (level / 20).coerceAtMost(4)
+        for (i in 0 until leaves) {
+            val y = base - 7 - i * 3.5f
+            val x = cx + (if (i * 3.5f + 2 > height / 2) sway else 0f)
+            if (i % 2 == 0) sprite(LEAF_L, x - 3, y, green) else sprite(LEAF_R, x + 1, y, green)
+        }
+        val tipX = cx + sway
+        val tipY = base - 5 - height
+        if (level >= 100) {
+            sprite(FLOWER, tipX - 2, tipY - 3, 0xFFE58FB0.toInt())
+            px(tipX, tipY - 1, 1f, 1f, 0xFFFFE27A.toInt())
+        } else {
+            px(tipX, tipY, 1f, 1f, blend(green, 0xFFFFFFFF.toInt(), 0.4f)) // a bud
+        }
+        digits(level, 64f, 9f)
+    }
+
+    /** A well filling with blocks, one per 2%; while charging the next one drops in. */
+    private fun blocks() {
+        val wx = 14f
+        val wy = 1f
+        val cols = 10
+        val rowsN = 5
+        val cell = 4f
+        px(wx - 1, wy, 1f, rowsN * cell + 1, Pixel.INK)
+        px(wx + cols * cell, wy, 1f, rowsN * cell + 1, Pixel.INK)
+        px(wx - 1, wy + rowsN * cell, cols * cell + 2, 1f, Pixel.INK)
+        val shades = intArrayOf(accent, blend(accent, 0xFFFFFFFF.toInt(), 0.3f), blend(accent, 0xFF000000.toInt(), 0.25f))
+        val count = (level * cols * rowsN / 100f).toInt()
+        for (i in 0 until count) {
+            val r = i / cols
+            val c = i % cols
+            val x = wx + c * cell
+            val y = wy + (rowsN - 1 - r) * cell
+            px(x, y, cell - 0.5f, cell - 0.5f, shades[(r + c) % shades.size])
+            px(x, y, cell - 0.5f, 0.5f, withAlpha(0xFFFFFFFF.toInt(), 90))
+        }
+        if (charging && count < cols * rowsN) {
+            // The next block falls to its spot.
+            val r = count / cols
+            val c = count % cols
+            val landY = wy + (rowsN - 1 - r) * cell
+            val y = minOf(wy + (tick % 8) * (landY - wy) / 7f, landY)
+            px(wx + c * cell, y, cell - 0.5f, cell - 0.5f, withAlpha(accent, 170))
+        }
+        digits(level, 66f, 9f)
+    }
+
+    /** The percentage in clock digits, right of the art. */
+    private fun digits(value: Int, @Suppress("UNUSED_PARAMETER") x: Float, y: Float) {
+        // Right-aligned to the grid's edge, so 100 fits.
+        var dx = GRID_W - value.toString().length * 6f
+        value.toString().forEach { ch ->
+            sprite(PixelGlyphs.DIGITS[ch - '0'], dx, y, Pixel.INK)
+            dx += 6f
+        }
     }
 
     private fun train() {

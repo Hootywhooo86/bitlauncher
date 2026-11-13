@@ -245,7 +245,7 @@ class LockScreen(base: Context, private val host: LockHost) : android.content.Co
         if (started) return
         started = true
         NotificationHub.listen(onNotes)
-        date.text = DateFormat.getDateInstance(DateFormat.FULL).format(Date()).uppercase()
+        date.text = (if (look == "terminal") "> DATE  " else "") + DateFormat.getDateInstance(DateFormat.FULL).format(Date()).uppercase()
         clock.update(animate = false)
         renderInfo()
         media.start()
@@ -307,6 +307,16 @@ class LockScreen(base: Context, private val host: LockHost) : android.content.Co
                 listW -= 2 * bz + Pixel.dpi(this, 20)
                 clockW = minOf(clockW, listW - Pixel.dpi(this, 16))
             }
+            "terminal" -> content.addView(Pixel.label(this, "BIT OS  ·  READY.", 10f, Pixel.MUTED).apply {
+                gravity = Gravity.START
+                setPadding(Pixel.dpi(context, 24), 0, 0, Pixel.dpi(context, 16))
+            }, LinearLayout.LayoutParams(-1, -2))
+            "departures" -> content.addView(Pixel.label(this, "DEPARTURES", 12f, Pixel.BG).apply {
+                gravity = Gravity.CENTER
+                val p = Pixel.dpi(context, 8)
+                setPadding(p, p, p, p)
+                setBackgroundColor(accent)
+            }, LinearLayout.LayoutParams(listW, -2).apply { bottomMargin = Pixel.dpi(this@LockScreen, 18) })
             "arcade" -> content.addView(Pixel.label(this, "PLAYER 1", 12f, accent).apply {
                 gravity = Gravity.CENTER
                 setPadding(0, 0, 0, Pixel.dpi(context, 16))
@@ -429,6 +439,7 @@ class LockScreen(base: Context, private val host: LockHost) : android.content.Co
             gravity = Gravity.CENTER
             setPadding(0, 0, 0, Pixel.dpi(context, 12))
         })
+        if (look == "departures") list.addView(boardRow("TIME", "FROM", "MESSAGE", Pixel.MUTED, Pixel.MUTED, null, false))
         val max = when (look) {
             "rpg" -> 3
             "pocket" -> 4
@@ -441,6 +452,17 @@ class LockScreen(base: Context, private val host: LockHost) : android.content.Co
                 setPadding(0, Pixel.dpi(context, 8), 0, 0)
             })
         }
+        if (look == "departures" && lines.isEmpty()) list.addView(boardRow("--:--", "NO MESSAGES", "", Pixel.MUTED, Pixel.MUTED, null, false))
+        if (look == "terminal") {
+            // The prompt, waiting.
+            list.addView(LinearLayout(this).apply {
+                gravity = Gravity.CENTER_VERTICAL
+                setPadding(0, Pixel.dpi(context, 4), 0, 0)
+                addView(mono(if (lines.isEmpty()) "> no new messages" else "> ", Pixel.INK))
+                if (lines.isEmpty()) addView(mono("  ", Pixel.INK))
+                addView(BlinkBlock(context, accent), LinearLayout.LayoutParams(Pixel.dpi(context, 9), Pixel.dpi(context, 16)))
+            })
+        }
     }
 
     private fun row(line: LockLine, accent: Int, animate: Boolean, index: Int): View {
@@ -449,6 +471,14 @@ class LockScreen(base: Context, private val host: LockHost) : android.content.Co
             "rpg" -> rpgRow(line, appName, accent)
             "arcade" -> scoreRow(line, appName, accent, index)
             "pocket" -> lcdRow(line, appName, accent)
+            "terminal" -> termRow(line, appName, accent)
+            "desktop" -> windowRow(line, appName, accent)
+            "departures" -> boardRow(
+                if (line.posted > 0) android.text.format.DateFormat.getTimeFormat(this).format(Date(line.posted)) else "--:--",
+                appName.uppercase() + if (line.count > 1) " x${line.count}" else "",
+                listOfNotNull(line.title, line.text).joinToString(": "),
+                accent, Pixel.INK, line, index % 2 == 0,
+            )
             else -> cardRow(line, appName, accent)
         }
         if (animate && Pixel.motion(this)) {
@@ -524,6 +554,77 @@ class LockScreen(base: Context, private val host: LockHost) : android.content.Co
         line.title?.let { addView(Pixel.label(context, it.uppercase().take(10), 9f, Pixel.MUTED).apply { maxLines = 1 }, LinearLayout.LayoutParams(-2, -2).apply { rightMargin = Pixel.dpi(context, 10) }) }
         addView(Pixel.label(context, "x${line.count.toString().padStart(2, '0')}", 10f, accent))
     }
+
+    private fun mono(text: CharSequence, color: Int): TextView = TextView(this).apply {
+        this.text = text
+        typeface = android.graphics.Typeface.MONOSPACE
+        setTextColor(color)
+        textSize = 13f
+    }
+
+    /** "[CHAT x2] Sam: Running late", the app in the accent, like a log line. */
+    private fun termRow(line: LockLine, appName: String, accent: Int): View {
+        val tag = "[" + appName.uppercase() + (if (line.count > 1) " x${line.count}" else "") + "]"
+        val said = listOfNotNull(line.title, line.text).joinToString(": ")
+        val text = android.text.SpannableString(if (said.isBlank()) tag else "$tag $said").apply {
+            setSpan(android.text.style.ForegroundColorSpan(accent), 0, tag.length, 0)
+        }
+        return mono(text, Pixel.INK).apply {
+            maxLines = 2
+            ellipsize = android.text.TextUtils.TruncateAt.END
+            setPadding(0, Pixel.dpi(context, 3), 0, Pixel.dpi(context, 3))
+            layoutParams = LinearLayout.LayoutParams(-1, -2)
+            isClickable = true
+            setOnClickListener { unlock(line) }
+        }
+    }
+
+    /** A little window: title bar in the accent with the app's name and a close box, words inside. */
+    private fun windowRow(line: LockLine, appName: String, accent: Int): View = LinearLayout(this).apply {
+        orientation = LinearLayout.VERTICAL
+        background = PanelDrawable(context, Pixel.PANEL, Pixel.INK)
+        val b = Pixel.dpi(context, 4)
+        setPadding(b, b, b + Pixel.dpi(context, 2), b + Pixel.dpi(context, 2))
+        layoutParams = LinearLayout.LayoutParams(-1, -2).apply { bottomMargin = Pixel.dpi(context, 10) }
+        isClickable = true
+        setOnClickListener { unlock(line) }
+        addView(LinearLayout(context).apply {
+            gravity = Gravity.CENTER_VERTICAL
+            setBackgroundColor(accent)
+            val p = Pixel.dpi(context, 5)
+            setPadding(p, p, p, p)
+            addView(spriteView(line, 14).apply { (layoutParams as LinearLayout.LayoutParams).rightMargin = Pixel.dpi(context, 6) })
+            addView(Pixel.label(context, (appName.uppercase() + if (line.count > 1) " (${line.count})" else "") , 9f, Pixel.BG), LinearLayout.LayoutParams(0, -2, 1f))
+            addView(Pixel.label(context, "X", 9f, Pixel.BG).apply {
+                gravity = Gravity.CENTER
+                background = PanelDrawable(context, accent, Pixel.BG, shadow = false)
+            }, LinearLayout.LayoutParams(Pixel.dpi(context, 18), Pixel.dpi(context, 18)))
+        }, LinearLayout.LayoutParams(-1, -2))
+        val said = listOfNotNull(line.title, line.text).joinToString("\n").ifBlank { "New notification." }
+        addView(plain(said, Pixel.INK, 14f, 3).apply {
+            val p = Pixel.dpi(context, 10)
+            setPadding(p, p, p, p)
+        }, LinearLayout.LayoutParams(-1, -2))
+    }
+
+    /** One line of the departure board. [line] null for the header. */
+    private fun boardRow(time: String, from: String, message: String, timeColor: Int, fromColor: Int, line: LockLine?, shaded: Boolean): View =
+        LinearLayout(this).apply {
+            gravity = Gravity.CENTER_VERTICAL
+            layoutParams = LinearLayout.LayoutParams(-1, -2)
+            val p = Pixel.dpi(context, 7)
+            setPadding(p, p, p, p)
+            if (shaded) setBackgroundColor(withAlpha(Pixel.PANEL, 230))
+            if (line != null) {
+                isClickable = true
+                setOnClickListener { unlock(line) }
+            }
+            addView(Pixel.label(context, time.uppercase(), 10f, timeColor), LinearLayout.LayoutParams(Pixel.dpi(context, 72), -2))
+            addView(Pixel.label(context, from.take(14), 10f, fromColor).apply { maxLines = 1 }, LinearLayout.LayoutParams(0, -2, 1f))
+            addView(plain(message, if (line == null) Pixel.MUTED else Pixel.INK, if (line == null) 10f else 13f, 1).apply {
+                if (line == null) typeface = Pixel.font(context)
+            }, LinearLayout.LayoutParams(0, -2, 1.4f))
+        }
 
     /** A line on the little LCD: sprite, app, and words, no cards. */
     private fun lcdRow(line: LockLine, appName: String, accent: Int): View = LinearLayout(this).apply {

@@ -70,6 +70,9 @@ class LockLooksTest {
                 "minimal" -> assertTrue(shown.contains("3 NEW  ·  CHAT, MAIL"))
                 "arcade" -> assertTrue(shown.containsAll(listOf("PLAYER 1", "HIGH SCORES", "1ST")))
                 "rpg" -> assertTrue(shown.any { it.startsWith("Sam: Running late") })
+                "terminal" -> assertTrue(shown.any { it.startsWith("[CHAT x2] Sam: Running late") })
+                "desktop" -> assertTrue(shown.contains("CHAT (2)"))
+                "departures" -> assertTrue(shown.containsAll(listOf("DEPARTURES", "TIME", "CHAT x2")))
                 else -> assertTrue(look.key, shown.any { it.contains("Running late") })
             }
             System.getenv("SHOT_DIR")?.let { dir ->
@@ -79,5 +82,29 @@ class LockLooksTest {
             }
             lock.finish()
         }
+    }
+}
+
+@RunWith(RobolectricTestRunner::class)
+@Config(sdk = [34], qualifiers = "w411dp-h891dp-xxhdpi")
+@GraphicsMode(GraphicsMode.Mode.NATIVE)
+class ChargeStylesTest {
+    @Test
+    fun everyChargeStyleDrawsAtEveryLevel() {
+        val ctx = RuntimeEnvironment.getApplication()
+        val dir = System.getenv("SHOT_DIR")
+        val sheet = if (dir != null) Bitmap.createBitmap(1100, 140 * ChargeView.STYLES.size, Bitmap.Config.ARGB_8888) else null
+        sheet?.eraseColor(Pixel.BG)
+        ChargeView.STYLES.forEachIndexed { row, (key, _) ->
+            listOf(5, 45, 80, 100).forEachIndexed { col, level ->
+                val v = ChargeView(ctx).apply { style = key; this.level = level; charging = level < 100 }
+                v.measure(View.MeasureSpec.makeMeasureSpec(240, View.MeasureSpec.EXACTLY), View.MeasureSpec.UNSPECIFIED)
+                v.layout(0, 0, v.measuredWidth, v.measuredHeight)
+                val b = Bitmap.createBitmap(v.measuredWidth, v.measuredHeight, Bitmap.Config.ARGB_8888)
+                v.draw(Canvas(b))
+                sheet?.let { Canvas(it).drawBitmap(b, 20f + col * 270f, 20f + row * 140f, null) }
+            }
+        }
+        sheet?.let { s -> File(dir, "charge-styles.png").outputStream().use { s.compress(Bitmap.CompressFormat.PNG, 100, it) } }
     }
 }
