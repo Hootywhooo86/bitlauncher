@@ -70,9 +70,9 @@ class BitApp : Application() {
         requestedAt = SystemClock.elapsedRealtime()
         val open = Intent(this, LockActivity::class.java)
             .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_NO_ANIMATION or Intent.FLAG_ACTIVITY_SINGLE_TOP)
-        // The accessibility service is allowed to open it from the background; the app alone
-        // usually isn't (Android quietly drops the request), so try that only as a fallback.
-        if (LockService.showLock(open)) return
+        // The accessibility service can draw it above the phone's lock screen; the app alone
+        // usually can't open anything from the background, so that's only a fallback.
+        if (LockService.showLock()) return
         try {
             startActivity(open)
         } catch (e: Exception) {
@@ -95,7 +95,91 @@ class BitApp : Application() {
  * Swipe up to unlock; that hands over to the phone's own PIN, pattern or fingerprint.
  * It sits in front of the system lock screen and never replaces it.
  */
-class LockActivity : Activity() {
+/** Where the lock screen is shown: an activity (preview, older phones) or an overlay window. */
+interface LockHost {
+    /** Put [view] up as the whole lock screen. */
+    fun show(view: View)
+
+    /** Take the lock screen down. */
+    fun close()
+
+    /** Ask for the phone's PIN, pattern or fingerprint. Then [done] runs, or [failed] if they backed out. */
+    fun dismissKeyguard(done: () -> Unit, failed: () -> Unit)
+}
+
+/** The preview from Settings, and the fallback on phones without the accessibility service on. */
+class LockActivity : Activity(), LockHost {
+    private lateinit var screen: LockScreen
+
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        if (Build.VERSION.SDK_INT >= 27) {
+            setShowWhenLocked(true)
+        } else {
+            @Suppress("DEPRECATION")
+            window.addFlags(WindowManager.LayoutParams.FLAG_SHOW_WHEN_LOCKED)
+        }
+        if (Build.VERSION.SDK_INT >= 30) {
+            @Suppress("DEPRECATION")
+            window.setDecorFitsSystemWindows(false)
+        }
+        screen = LockScreen(this, this)
+        screen.create()
+    }
+
+    override fun onDestroy() {
+        super.onDestroy()
+        screen.destroy()
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        screen.reshow()
+    }
+
+    override fun onStart() {
+        super.onStart()
+        screen.start()
+    }
+
+    override fun onStop() {
+        super.onStop()
+        screen.stop()
+    }
+
+    @Deprecated("Deprecated in Java")
+    override fun onBackPressed() {
+        // Back does nothing here: the way out is the unlock swipe.
+    }
+
+    override fun show(view: View) = setContentView(view)
+
+    override fun close() {
+        finish()
+        @Suppress("DEPRECATION")
+        overridePendingTransition(0, 0)
+    }
+
+    override fun dismissKeyguard(done: () -> Unit, failed: () -> Unit) {
+        getSystemService(KeyguardManager::class.java).requestDismissKeyguard(this, object : KeyguardManager.KeyguardDismissCallback() {
+            override fun onDismissSucceeded() = done()
+            override fun onDismissCancelled() = failed()
+            override fun onDismissError() = failed()
+        })
+    }
+
+    companion object {
+        /** When the lock screen last appeared; the app checks this to know if Android blocked it. */
+        @Volatile
+        var shownAt = 0L
+    }
+}
+
+/**
+ * The lock screen itself, whatever is showing it. Built on a plain context so the accessibility
+ * service can put it in an overlay window, which Android draws above its own lock screen.
+ */
+class LockScreen(base: Context, private val host: LockHost) : android.content.ContextWrapper(base) {
     private lateinit var prefs: Prefs
     private lateinit var icons: IconCache
     private lateinit var content: LinearLayout
@@ -125,43 +209,41 @@ class LockActivity : Activity() {
         override fun onReceive(context: Context, intent: Intent) = leave()
     }
 
-    override fun onCreate(savedInstanceState: Bundle?) {
-        super.onCreate(savedInstanceState)
+    /** The whole lock screen as it's showing now (for the unlock dissolve). */
+    var root: View? = null
+        private set
+
+    fun create() {
         prefs = Prefs(this)
         icons = IconCache(this)
-        if (Build.VERSION.SDK_INT >= 27) {
-            setShowWhenLocked(true)
-        } else {
-            @Suppress("DEPRECATION")
-            window.addFlags(WindowManager.LayoutParams.FLAG_SHOW_WHEN_LOCKED)
-        }
-        if (Build.VERSION.SDK_INT >= 30) {
-            @Suppress("DEPRECATION")
-            window.setDecorFitsSystemWindows(false)
-        }
         block = Pixel.dpi(this, 4)
         media = MediaSource(this) { renderMedia() }
-        setContentView(build())
-        shownAt = SystemClock.elapsedRealtime()
+        root = build().also(host::show)
+        LockActivity.shownAt = SystemClock.elapsedRealtime()
         registerReceiver(unlocked, IntentFilter(Intent.ACTION_USER_PRESENT))
     }
 
-    override fun onDestroy() {
-        super.onDestroy()
+    fun destroy() {
         float?.cancel()
-        unregisterReceiver(unlocked)
+        hintBlink?.cancel()
+        try {
+            unregisterReceiver(unlocked)
+        } catch (e: Exception) {
+        }
     }
 
-    override fun onNewIntent(intent: Intent) {
-        super.onNewIntent(intent)
-        shownAt = SystemClock.elapsedRealtime()
+    fun reshow() {
+        LockActivity.shownAt = SystemClock.elapsedRealtime()
         content.translationY = 0f
         content.alpha = 1f
         renderNotes(animate = false)
     }
 
-    override fun onStart() {
-        super.onStart()
+    private var started = false
+
+    fun start() {
+        if (started) return
+        started = true
         NotificationHub.listen(onNotes)
         date.text = DateFormat.getDateInstance(DateFormat.FULL).format(Date()).uppercase()
         clock.update(animate = false)
@@ -172,17 +254,13 @@ class LockActivity : Activity() {
         renderNotes(animate = true)
     }
 
-    override fun onStop() {
-        super.onStop()
+    fun stop() {
+        if (!started) return
+        started = false
         NotificationHub.unlisten(onNotes)
         media.stop()
         unregisterReceiver(battery)
         charge.charging = false
-    }
-
-    @Deprecated("Deprecated in Java")
-    override fun onBackPressed() {
-        // Back does nothing here: the way out is the unlock swipe.
     }
 
     private val look get() = prefs.lockStyle
@@ -257,8 +335,8 @@ class LockActivity : Activity() {
             status.addView(date, LinearLayout.LayoutParams(-1, -2))
             status.addView(info, LinearLayout.LayoutParams(-1, -2))
             content.addView(status, LinearLayout.LayoutParams(listW, -2).apply {
-                topMargin = Pixel.dpi(this@LockActivity, 18)
-                bottomMargin = Pixel.dpi(this@LockActivity, 18)
+                topMargin = Pixel.dpi(this@LockScreen, 18)
+                bottomMargin = Pixel.dpi(this@LockScreen, 18)
             })
         } else {
             content.addView(date, LinearLayout.LayoutParams(-1, -2))
@@ -272,7 +350,7 @@ class LockActivity : Activity() {
             addView(charge, LinearLayout.LayoutParams(-1, -2))
             addView(chargeText, LinearLayout.LayoutParams(-1, -2).apply { topMargin = Pixel.dpi(context, 8) })
         }
-        content.addView(chargeBox, LinearLayout.LayoutParams(minOf(listW, Pixel.dpi(this, 360)), -2).apply { bottomMargin = Pixel.dpi(this@LockActivity, 22) })
+        content.addView(chargeBox, LinearLayout.LayoutParams(minOf(listW, Pixel.dpi(this, 360)), -2).apply { bottomMargin = Pixel.dpi(this@LockScreen, 22) })
         mediaBox = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
         content.addView(mediaBox, LinearLayout.LayoutParams(listW, -2))
         list = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
@@ -296,7 +374,7 @@ class LockActivity : Activity() {
         if (look == "arcade") {
             // CRT scanlines over everything, and the prompt fades like an attract screen.
             root.addView(ScreenTexture(this, grid = false), FrameLayout.LayoutParams(-1, -1))
-            if (Pixel.motion(this)) android.animation.ObjectAnimator.ofFloat(hint, View.ALPHA, 1f, 0.15f).apply {
+            if (Pixel.motion(this)) hintBlink = android.animation.ObjectAnimator.ofFloat(hint, View.ALPHA, 1f, 0.15f).apply {
                 duration = 700
                 repeatMode = android.animation.ValueAnimator.REVERSE
                 repeatCount = android.animation.ValueAnimator.INFINITE
@@ -321,6 +399,7 @@ class LockActivity : Activity() {
     }
 
     private var float: android.animation.ValueAnimator? = null
+    private var hintBlink: android.animation.ObjectAnimator? = null
 
     /** The chevron floats gently up and down, like it's breathing. */
     private fun bob() {
@@ -413,8 +492,8 @@ class LockActivity : Activity() {
             minimumHeight = Pixel.dpi(context, 72)
         }
         val said = listOfNotNull(line.title, line.text).joinToString(": ").ifBlank { if (line.count > 1) "${line.count} new notifications." else "A new notification." }
-        box.addView(plain(said, Pixel.INK, 14f, 3), LinearLayout.LayoutParams(-1, -2).apply { rightMargin = Pixel.dpi(this@LockActivity, 8) })
-        frame.addView(box, FrameLayout.LayoutParams(-1, -2).apply { topMargin = Pixel.dpi(this@LockActivity, 10) })
+        box.addView(plain(said, Pixel.INK, 14f, 3), LinearLayout.LayoutParams(-1, -2).apply { rightMargin = Pixel.dpi(this@LockScreen, 8) })
+        frame.addView(box, FrameLayout.LayoutParams(-1, -2).apply { topMargin = Pixel.dpi(this@LockScreen, 10) })
         val tab = LinearLayout(this).apply {
             gravity = Gravity.CENTER_VERTICAL
             background = PanelDrawable(context, Pixel.PANEL, accent, shadow = false)
@@ -423,10 +502,10 @@ class LockActivity : Activity() {
             addView(spriteView(line, 16).apply { (layoutParams as LinearLayout.LayoutParams).rightMargin = Pixel.dpi(context, 6) })
             addView(Pixel.label(context, if (line.count > 1) "${appName.uppercase()} x${line.count}" else appName.uppercase(), 9f, accent))
         }
-        frame.addView(tab, FrameLayout.LayoutParams(-2, -2).apply { leftMargin = Pixel.dpi(this@LockActivity, 14) })
+        frame.addView(tab, FrameLayout.LayoutParams(-2, -2).apply { leftMargin = Pixel.dpi(this@LockScreen, 14) })
         frame.addView(MoreArrow(this, Pixel.INK), FrameLayout.LayoutParams(-2, -2, Gravity.BOTTOM or Gravity.END).apply {
-            rightMargin = Pixel.dpi(this@LockActivity, 18)
-            bottomMargin = Pixel.dpi(this@LockActivity, 12)
+            rightMargin = Pixel.dpi(this@LockScreen, 18)
+            bottomMargin = Pixel.dpi(this@LockScreen, 12)
         })
         return frame
     }
@@ -476,7 +555,7 @@ class LockActivity : Activity() {
         row.addView(ImageView(this).apply {
             if (sprite != null) setImageDrawable(android.graphics.drawable.BitmapDrawable(resources, sprite).apply { paint.isFilterBitmap = false })
             scaleType = ImageView.ScaleType.FIT_CENTER
-        }, LinearLayout.LayoutParams(Pixel.dpi(this, 32), Pixel.dpi(this, 32)).apply { rightMargin = Pixel.dpi(this@LockActivity, 12) })
+        }, LinearLayout.LayoutParams(Pixel.dpi(this, 32), Pixel.dpi(this, 32)).apply { rightMargin = Pixel.dpi(this@LockScreen, 12) })
         val words = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
         val head = if (line.count > 1) "${appName.uppercase()}  x${line.count}" else appName.uppercase()
         words.addView(Pixel.label(this, head, 10f, accent))
@@ -546,23 +625,20 @@ class LockActivity : Activity() {
         media.current()?.let { mediaBox.addView(TodayCards.media(this, prefs.accent, it)) }
     }
 
-    /** Unlocked: break apart block by block to reveal home, then go. */
-    private fun leave() {
+    /** Unlocked: break apart block by block to reveal what's underneath, then go. */
+    fun leave() {
         if (leaving) return
         leaving = true
-        val root = window.decorView
-        if (!Pixel.motion(this) || root.width == 0) {
-            finish()
-            overridePendingTransitionCompat()
+        val root = root
+        if (root == null || !Pixel.motion(this) || root.width == 0) {
+            host.close()
             return
         }
         val shot = android.graphics.Bitmap.createBitmap(root.width, root.height, android.graphics.Bitmap.Config.ARGB_8888)
         root.draw(android.graphics.Canvas(shot))
-        val dissolve = DissolveView(this, shot, Pixel.dpi(this, 18)) {
-            finish()
-            overridePendingTransitionCompat()
-        }
-        setContentView(dissolve)
+        val dissolve = DissolveView(this, shot, Pixel.dpi(this, 18)) { host.close() }
+        this.root = dissolve
+        host.show(dissolve)
         dissolve.start()
     }
 
@@ -582,27 +658,13 @@ class LockActivity : Activity() {
             then()
             return
         }
-        keyguard.requestDismissKeyguard(this, object : KeyguardManager.KeyguardDismissCallback() {
-            override fun onDismissSucceeded() = then()
-            override fun onDismissCancelled() = resetSwipe()
-            override fun onDismissError() = resetSwipe()
-        })
+        host.dismissKeyguard(then, ::resetSwipe)
     }
 
     private fun resetSwipe() {
         content.animate().translationY(0f).alpha(1f).setDuration(260).setInterpolator(Ease.move).start()
     }
 
-    private fun overridePendingTransitionCompat() {
-        @Suppress("DEPRECATION")
-        overridePendingTransition(0, 0)
-    }
-
-    companion object {
-        /** When the lock screen last appeared; the app checks this to know if Android blocked it. */
-        @Volatile
-        var shownAt = 0L
-    }
 }
 
 /**
