@@ -161,25 +161,25 @@ class LockExpandTest {
             val root = lock.window.decorView
             if (look == "minimal") clickableAbove(find(root, "3 NEW  ·  CHAT, MAIL")!!).performClick()
             shadowOf(Looper.getMainLooper()).idle()
-            assertFalse(look, texts(root).contains("Lunch?"))
+            assertFalse(look, texts(root).any { it.contains("Lunch?") })
             // Tap the chat app's row: both its messages show on their own, the secret one doesn't.
             val chatRow = root.findClickable { it.contains("CHAT") }
             chatRow!!.performClick()
             shadowOf(Looper.getMainLooper()).idle()
             val shown = texts(root)
-            assertTrue(look, shown.contains("Lunch?"))
-            assertTrue(look, shown.contains("Running late, save me a seat"))
+            assertTrue(look, shown.any { it.contains("Lunch?") })
+            assertTrue(look, shown.any { it.contains("Running late, save me a seat") })
             assertFalse(look, shown.any { it.contains("Never shown") })
-            assertTrue(look, shown.containsAll(listOf("CLEAR", "BACK", "OPEN")))
+            for (b in listOf("CLEAR", "BACK", "OPEN")) assertTrue("$look $b", shown.any { it.contains(b) })
             assertFalse("only the opened app shows", shown.any { it.contains("Arrives Friday") })
-            if (look == "classic") System.getenv("SHOT_DIR")?.let { dir ->
+            System.getenv("SHOT_DIR")?.let { dir ->
                 val b = Bitmap.createBitmap(root.width, root.height, Bitmap.Config.ARGB_8888)
                 Canvas(b).also { root.draw(it) }
-                File(dir, "lock-expanded.png").outputStream().use { b.compress(Bitmap.CompressFormat.PNG, 100, it) }
+                File(dir, "open-$look.png").outputStream().use { b.compress(Bitmap.CompressFormat.PNG, 100, it) }
             }
-            clickableAbove(find(root, "BACK")!!).performClick()
+            root.findClickable { it.contains("BACK") }!!.performClick()
             shadowOf(Looper.getMainLooper()).idle()
-            assertFalse(look, texts(root).contains("Lunch?"))
+            assertFalse(look, texts(root).any { it.contains("Lunch?") })
             lock.finish()
         }
     }

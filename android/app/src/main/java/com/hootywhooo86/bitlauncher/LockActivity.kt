@@ -789,29 +789,17 @@ class LockScreen(base: Context, private val host: LockHost) : android.content.Co
             setPadding(Pixel.dpi(context, 16), 0, 0, 0)
         }
         val previewsHidden = notes.all { it.title == null && it.text == null }
-        notes.take(5).forEach { n ->
+        notes.take(5).forEachIndexed { i, n ->
             lateinit var card: SwipeCard
             card = SwipeCard(this, n.clearable) {
                 NotificationHub.dismiss(n.key)
                 (card.parent as? LinearLayout)?.removeView(card)
             }
-            val body = LinearLayout(this).apply {
-                orientation = LinearLayout.HORIZONTAL
-                background = PanelDrawable(context, withAlpha(Pixel.PANEL, 240), withAlpha(accent, 150))
-                val p = Pixel.dpi(context, 10)
-                setPadding(p, p, p + Pixel.dpi(context, 2), p + Pixel.dpi(context, 2))
-                isClickable = true
-                setOnClickListener { openNote(n) }
-            }
-            val words = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
-            words.addView(plain(n.title ?: "New notification", Pixel.INK, 14f, 1))
-            n.text?.let { words.addView(plain(it, Pixel.MUTED, 13f, 3)) }
-            body.addView(words, LinearLayout.LayoutParams(0, -2, 1f))
-            body.addView(Pixel.label(this, NoteCards.ago(n.posted).uppercase(), 8f, Pixel.MUTED), LinearLayout.LayoutParams(-2, -2).apply {
-                leftMargin = Pixel.dpi(this@LockScreen, 8)
-            })
+            val body = noteBody(n, accent, i)
+            body.isClickable = true
+            body.setOnClickListener { openNote(n) }
             card.addView(body, FrameLayout.LayoutParams(-1, -2))
-            box.addView(card, LinearLayout.LayoutParams(-1, -2).apply { bottomMargin = Pixel.dpi(this@LockScreen, 6) })
+            box.addView(card, LinearLayout.LayoutParams(-1, -2).apply { bottomMargin = Pixel.dpi(this@LockScreen, if (look in FLAT) 0 else 6) })
         }
         if (notes.size > 5) box.addView(Pixel.label(this, "+${notes.size - 5} MORE", 9f, Pixel.MUTED).apply { setPadding(0, 0, 0, Pixel.dpi(context, 8)) })
         if (previewsHidden) box.addView(plain(
@@ -821,18 +809,133 @@ class LockScreen(base: Context, private val host: LockHost) : android.content.Co
         ).apply { setPadding(0, Pixel.dpi(context, 2), 0, Pixel.dpi(context, 8)) })
         box.addView(LinearLayout(this).apply {
             gravity = Gravity.END
-            if (notes.any { it.clearable }) addView(Pixel.button(context, "CLEAR", accent) {
-                notes.filter { it.clearable }.forEach { NotificationHub.dismiss(it.key) }
-                expanded = null
-            })
-            addView(Pixel.button(context, "BACK", accent) { tapped(line) }, LinearLayout.LayoutParams(-2, -2).apply {
-                leftMargin = Pixel.dpi(this@LockScreen, 8)
-            })
-            addView(Pixel.button(context, "OPEN", accent) { unlock(line) }, LinearLayout.LayoutParams(-2, -2).apply {
-                leftMargin = Pixel.dpi(this@LockScreen, 8)
-            })
+            setPadding(0, Pixel.dpi(context, if (look in FLAT) 8 else 0), 0, 0)
+            val actions = listOfNotNull(
+                if (notes.any { it.clearable }) "CLEAR" to {
+                    notes.filter { it.clearable }.forEach { NotificationHub.dismiss(it.key) }
+                    expanded = null
+                } else null,
+                "BACK" to { tapped(line) },
+                "OPEN" to { unlock(line) },
+            )
+            actions.forEachIndexed { i, (label, act) ->
+                addView(actionButton(label, accent) { act() }, LinearLayout.LayoutParams(-2, -2).apply {
+                    if (i > 0) leftMargin = Pixel.dpi(this@LockScreen, 8)
+                })
+            }
         }, LinearLayout.LayoutParams(-1, -2))
         return box
+    }
+
+    /** Looks whose notifications are lines rather than boxes. */
+    private val FLAT = setOf("arcade", "terminal", "departures", "pocket")
+
+    /** A button in the look's own style. */
+    private fun actionButton(label: String, accent: Int, onClick: () -> Unit): View = when (look) {
+        "terminal" -> mono("[$label]", accent).apply {
+            val p = Pixel.dpi(context, 6)
+            setPadding(p, p, p, p)
+            isClickable = true
+            setOnClickListener { onClick() }
+        }
+        "rpg" -> Pixel.label(this, "▶ $label", 10f, Pixel.INK).apply {
+            background = RpgBoxDrawable(context, withAlpha(Pixel.PANEL, 240), Pixel.INK, withAlpha(Pixel.MUTED, 160))
+            val p = Pixel.dpi(context, 14)
+            setPadding(p, p, p + Pixel.dpi(context, 4), p + Pixel.dpi(context, 4))
+            isClickable = true
+            setOnClickListener { onClick() }
+        }
+        "departures", "desktop" -> Pixel.label(this, label, 10f, Pixel.BG).apply {
+            setBackgroundColor(accent)
+            val p = Pixel.dpi(context, 10)
+            setPadding(p, p, p, p)
+            isClickable = true
+            setOnClickListener { onClick() }
+        }
+        "arcade", "pocket" -> Pixel.label(this, label, 10f, accent).apply {
+            val p = Pixel.dpi(context, 10)
+            setPadding(p, p, p, p)
+            isClickable = true
+            setOnClickListener { onClick() }
+        }
+        else -> Pixel.button(this, label, accent) { onClick() }
+    }
+
+    /** One notification, drawn the way the look draws things. */
+    private fun noteBody(n: LockNote, accent: Int, index: Int): View {
+        val title = n.title ?: "New notification"
+        val ago = NoteCards.ago(n.posted).uppercase()
+        return when (look) {
+            "rpg" -> LinearLayout(this).apply {
+                orientation = LinearLayout.VERTICAL
+                background = RpgBoxDrawable(context, withAlpha(Pixel.PANEL, 240), Pixel.INK, withAlpha(Pixel.MUTED, 160))
+                val p = Pixel.dpi(context, 16)
+                setPadding(p, p, p + Pixel.dpi(context, 4), p + Pixel.dpi(context, 4))
+                addView(plain(listOfNotNull(title, n.text).joinToString(": "), Pixel.INK, 14f, 4))
+            }
+            "terminal" -> mono(android.text.SpannableString("  $ago> $title" + (n.text?.let { ": $it" } ?: "")).apply {
+                setSpan(android.text.style.ForegroundColorSpan(Pixel.MUTED), 0, ago.length + 3, 0)
+            }, Pixel.INK).apply {
+                maxLines = 3
+                ellipsize = android.text.TextUtils.TruncateAt.END
+                setPadding(0, Pixel.dpi(context, 3), 0, Pixel.dpi(context, 3))
+            }
+            "arcade" -> LinearLayout(this).apply {
+                gravity = Gravity.CENTER_VERTICAL
+                val p = Pixel.dpi(context, 6)
+                setPadding(p, p, p, p)
+                addView(Pixel.label(context, ago, 9f, accent), LinearLayout.LayoutParams(Pixel.dpi(context, 44), -2))
+                val words = LinearLayout(context).apply { orientation = LinearLayout.VERTICAL }
+                words.addView(Pixel.label(context, title.uppercase(), 10f, Pixel.INK).apply { maxLines = 1 })
+                n.text?.let { words.addView(plain(it, Pixel.MUTED, 13f, 2)) }
+                addView(words, LinearLayout.LayoutParams(0, -2, 1f))
+            }
+            "pocket" -> LinearLayout(this).apply {
+                orientation = LinearLayout.VERTICAL
+                setPadding(0, Pixel.dpi(context, 4), 0, Pixel.dpi(context, 6))
+                addView(Pixel.label(context, "$ago  ${title.uppercase()}", 9f, accent).apply { maxLines = 1 })
+                n.text?.let { addView(plain(it, Pixel.INK, 13f, 3).apply { setPadding(0, Pixel.dpi(context, 3), 0, 0) }) }
+            }
+            "desktop" -> LinearLayout(this).apply {
+                orientation = LinearLayout.VERTICAL
+                background = PanelDrawable(context, Pixel.PANEL, Pixel.INK)
+                val b = Pixel.dpi(context, 4)
+                setPadding(b, b, b + Pixel.dpi(context, 2), b + Pixel.dpi(context, 2))
+                addView(LinearLayout(context).apply {
+                    gravity = Gravity.CENTER_VERTICAL
+                    setBackgroundColor(withAlpha(accent, 170))
+                    val p = Pixel.dpi(context, 5)
+                    setPadding(p, p, p, p)
+                    addView(Pixel.label(context, title.uppercase(), 9f, Pixel.BG).apply { maxLines = 1 }, LinearLayout.LayoutParams(0, -2, 1f))
+                    addView(Pixel.label(context, ago, 8f, Pixel.BG))
+                }, LinearLayout.LayoutParams(-1, -2))
+                addView(plain(n.text ?: "", Pixel.INK, 13f, 3).apply {
+                    val p = Pixel.dpi(context, 8)
+                    setPadding(p, p, p, p)
+                    visibility = if (n.text == null) View.GONE else View.VISIBLE
+                }, LinearLayout.LayoutParams(-1, -2))
+            }
+            "departures" -> LinearLayout(this).apply {
+                gravity = Gravity.CENTER_VERTICAL
+                val p = Pixel.dpi(context, 7)
+                setPadding(p, p, p, p)
+                if (index % 2 == 0) setBackgroundColor(withAlpha(Pixel.PANEL, 230))
+                val time = if (n.posted > 0) android.text.format.DateFormat.getTimeFormat(context).format(Date(n.posted)) else "--:--"
+                addView(Pixel.label(context, time.uppercase(), 10f, accent), LinearLayout.LayoutParams(Pixel.dpi(context, 72), -2))
+                addView(plain(listOfNotNull(title, n.text).joinToString(": "), Pixel.INK, 13f, 2), LinearLayout.LayoutParams(0, -2, 1f))
+            }
+            else -> LinearLayout(this).apply {
+                orientation = LinearLayout.HORIZONTAL
+                background = PanelDrawable(context, withAlpha(Pixel.PANEL, 240), withAlpha(accent, 150))
+                val p = Pixel.dpi(context, 10)
+                setPadding(p, p, p + Pixel.dpi(context, 2), p + Pixel.dpi(context, 2))
+                val words = LinearLayout(context).apply { orientation = LinearLayout.VERTICAL }
+                words.addView(plain(title, Pixel.INK, 14f, 1))
+                n.text?.let { words.addView(plain(it, Pixel.MUTED, 13f, 3)) }
+                addView(words, LinearLayout.LayoutParams(0, -2, 1f))
+                addView(Pixel.label(context, ago, 8f, Pixel.MUTED), LinearLayout.LayoutParams(-2, -2).apply { leftMargin = Pixel.dpi(context, 8) })
+            }
+        }
     }
 
     private fun openNote(n: LockNote) {
