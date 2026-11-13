@@ -81,3 +81,20 @@ settings) with `put_settings(new_data, app_key => 'bitlauncher')` and reads it b
 `get_settings('bitlauncher')`, the same per-app store 128bitPlay uses. Google sign-in comes
 back to `bitlauncher://family-auth`, which must be listed in the project's
 **Authentication → URL Configuration → Redirect URLs**.
+
+## 5. The ticket stub (for Railway Time)
+
+The lock screen and the Today page show a pixel ticket stub for the next thing in the next
+12 hours: a shift from bitlauncher's own shift schedule, or a train another app sends.
+
+```kotlin
+context.sendBroadcast(Intent("com.hootywhooo86.bitlauncher.SET_TICKET")
+    .setPackage("com.hootywhooo86.bitlauncher")
+    .putExtra("what", "08:42 to Union, platform 4") // up to 40 characters
+    .putExtra("at", departureMillis))                // when it leaves, epoch millis
+```
+
+- Send it again whenever the next train changes. Send without extras to clear it.
+- It hides itself once `at` has passed. Nothing is shown unless something was sent: no
+  sample tickets.
+- Display only: it opens nothing and is never synced.

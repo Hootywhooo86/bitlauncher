@@ -205,3 +205,42 @@ class LockExpandTest {
         assertTrue(ctx != null)
     }
 }
+
+@RunWith(RobolectricTestRunner::class)
+@Config(sdk = [34], qualifiers = "w841dp-h701dp-xhdpi")
+@GraphicsMode(GraphicsMode.Mode.NATIVE)
+class LockUnfoldedTest {
+    @Test
+    fun unfoldedPutsTheClockLeftAndNotificationsRight() {
+        val ctx = RuntimeEnvironment.getApplication()
+        val me = android.content.ComponentName(ctx, BitNotificationService::class.java).flattenToString()
+        Settings.Secure.putString(ctx.contentResolver, "enabled_notification_listeners", me)
+        Settings.Secure.putInt(ctx.contentResolver, "lock_screen_allow_private_notifications", 1)
+        val now = System.currentTimeMillis()
+        NotificationHub.replaceAll(listOf(
+            Note("a", "chat", 0, "Sam", "Running late", android.app.Notification.VISIBILITY_PUBLIC, null, null, false, false, now),
+        ))
+        Prefs(ctx).apply { lockDetail = 2; scene = "railway"; sceneTime = "night"; lockStyle = "classic"; clockFont = "lcd" }
+        val lock = Robolectric.buildActivity(LockActivity::class.java).setup().get()
+        shadowOf(Looper.getMainLooper()).idleFor(java.time.Duration.ofMillis(800))
+        val root = lock.window.decorView
+        fun find(v: View, pred: (View) -> Boolean): View? {
+            if (pred(v)) return v
+            if (v is ViewGroup) for (i in 0 until v.childCount) find(v.getChildAt(i), pred)?.let { return it }
+            return null
+        }
+        val clock = find(root) { it is PixelClockView }!!
+        val sam = find(root) { it is android.widget.TextView && it.text.toString() == "Running late" }!!
+        val c = IntArray(2).also { clock.getLocationOnScreen(it) }
+        val s = IntArray(2).also { sam.getLocationOnScreen(it) }
+        assertTrue("clock on the left half", c[0] + clock.width <= root.width / 2 + 2)
+        assertTrue("notifications on the right half", s[0] >= root.width / 2)
+        System.getenv("SHOT_DIR")?.let { dir ->
+            val b = Bitmap.createBitmap(root.width, root.height, Bitmap.Config.ARGB_8888)
+            Canvas(b).also { root.draw(it) }
+            File(dir, "lock-unfolded.png").outputStream().use { b.compress(Bitmap.CompressFormat.PNG, 100, it) }
+        }
+        NotificationHub.replaceAll(emptyList())
+        Prefs(ctx).apply { scene = "none"; sceneTime = "auto"; clockFont = "blocks"; lockDetail = 0 }
+    }
+}

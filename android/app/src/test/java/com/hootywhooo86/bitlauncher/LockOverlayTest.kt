@@ -100,3 +100,68 @@ class UnlockAndWallpaperTest {
         prefs.apply { scene = "none"; sceneTime = "auto" }
     }
 }
+
+@RunWith(RobolectricTestRunner::class)
+@Config(sdk = [35])
+class LockExtrasTest {
+    @Test
+    fun alarmLineOnlyWithinTwelveHours() {
+        val now = 1_000_000_000_000L
+        assertEquals("WAKE 6:30 AM  ·  IN 7H 12M", alarmLine(now, now + (7 * 60 + 12) * 60_000L, "6:30 am"))
+        assertEquals(null, alarmLine(now, now + 13 * 3_600_000L, "x"))
+        assertEquals(null, alarmLine(now, null, "x"))
+        assertEquals(null, alarmLine(now, now - 1, "x"))
+    }
+
+    @Test
+    fun clockFontsAreAllFiveBySeven() {
+        for ((key, _) in ClockFonts.ALL) {
+            val d = ClockFonts.digits(key)
+            assertEquals(key, 10, d.size)
+            for (g in d) {
+                assertEquals(key, 7, g.size)
+                assertTrue(key, g.all { it.length == 5 })
+            }
+            // No two digits look the same.
+            assertEquals(key, 10, d.map { it.joinToString() }.toSet().size)
+        }
+    }
+
+    @Test
+    fun ticketsShowOnlyRealThingsInTheNextTwelveHours() {
+        val ctx = org.robolectric.RuntimeEnvironment.getApplication()
+        val now = System.currentTimeMillis()
+        Tickets.clear(ctx)
+        Prefs(ctx).shiftSchedule = false
+        assertEquals("nothing seeded", null, Tickets.next(ctx, now))
+        // Railway Time sends a train.
+        TicketReceiver().onReceive(ctx, android.content.Intent(Tickets.ACTION_SET_TICKET).putExtra("what", "08:42 to Union").putExtra("at", now + 40 * 60_000L))
+        val t = Tickets.next(ctx, now)!!
+        assertEquals("TRAIN", t.kind)
+        assertEquals("08:42 to Union", t.what)
+        assertEquals(null, Tickets.next(ctx, now + 41 * 60_000L))
+        // An empty send clears it.
+        TicketReceiver().onReceive(ctx, android.content.Intent(Tickets.ACTION_SET_TICKET))
+        assertEquals(null, Tickets.next(ctx, now))
+    }
+
+    @Test
+    fun cornerButtonsAndTicketOnTheLockScreen() {
+        val ctx = org.robolectric.RuntimeEnvironment.getApplication()
+        val now = System.currentTimeMillis()
+        Tickets.save(ctx, "08:42 to Union", now + 30 * 60_000L)
+        val lock = Robolectric.buildActivity(LockActivity::class.java).setup().get()
+        shadowOf(Looper.getMainLooper()).idle()
+        val root = lock.window.decorView
+        fun all(v: View, out: MutableList<View> = mutableListOf()): List<View> {
+            out.add(v)
+            if (v is ViewGroup) for (i in 0 until v.childCount) all(v.getChildAt(i), out)
+            return out
+        }
+        assertEquals(2, all(root).count { it is CornerButton })
+        val texts = all(root).filterIsInstance<android.widget.TextView>().filter { it.isShown }.map { it.text.toString() }
+        assertTrue(texts.contains("TRAIN"))
+        assertTrue(texts.contains("08:42 TO UNION"))
+        Tickets.clear(ctx)
+    }
+}

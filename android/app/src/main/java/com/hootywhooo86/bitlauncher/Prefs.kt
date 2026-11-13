@@ -179,6 +179,11 @@ class Prefs(context: Context) {
         get() = sp.getString("popups", "home")!!
         set(v) = sp.edit().putString("popups", v).apply()
 
+    /** Clock digit style, home and lock screen (see ClockFonts.ALL). */
+    var clockFont: String
+        get() = sp.getString("clockFont", "blocks")!!
+        set(v) = sp.edit().putString("clockFont", v).apply()
+
     /** Put the pixel scene on the phone's own lock screen wallpaper too. */
     var lockWallpaper: Boolean
         get() = sp.getBoolean("lockWallpaper", false)
@@ -225,6 +230,7 @@ class Prefs(context: Context) {
         .put("chargeStyle", chargeStyle)
         .put("lockStyle", lockStyle)
         .put("lockWallpaper", lockWallpaper)
+        .put("clockFont", clockFont)
         .put("swipeDown", swipeDown)
         .put("popups", popups)
         .put("layoutLocked", layoutLocked)
@@ -253,6 +259,7 @@ class Prefs(context: Context) {
         chargeStyle = o.optString("chargeStyle", chargeStyle)
         lockStyle = o.optString("lockStyle", lockStyle)
         lockWallpaper = o.optBoolean("lockWallpaper", lockWallpaper)
+        clockFont = o.optString("clockFont", clockFont)
         swipeDown = o.optString("swipeDown", swipeDown)
         popups = o.optString("popups", popups)
         layoutLocked = o.optBoolean("layoutLocked", layoutLocked)

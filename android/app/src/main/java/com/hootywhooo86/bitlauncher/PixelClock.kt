@@ -46,6 +46,11 @@ class PixelClockView(context: Context, private val blink: Boolean) : View(contex
     var accent = Pixel.ACCENTS[0]
         set(v) { field = v; invalidate() }
 
+    /** Digit style (see ClockFonts.ALL). */
+    var font = "blocks"
+        set(v) { field = v; invalidate() }
+    private val ghost = Paint()
+
     /** Called every minute, for things that change with the time (like the date). */
     var onTick: (() -> Unit)? = null
 
@@ -149,8 +154,16 @@ class PixelClockView(context: Context, private val blink: Boolean) : View(contex
     }
 
     private fun drawDigit(canvas: Canvas, d: Int, x: Float, y: Float, block: Float) {
-        val rows = PixelGlyphs.DIGITS[d]
+        val rows = ClockFonts.digits(font)[d]
         val off = (block / 3f).coerceAtLeast(1f)
+        if (font == "lcd") {
+            // Unlit segments show faintly, like a real display.
+            ghost.color = withAlpha(Pixel.INK, 22)
+            val g = ClockFonts.LCD_GHOST
+            for (r in 0 until PixelGlyphs.H) for (c in 0 until PixelGlyphs.W) if (g[r][c] == '#') {
+                canvas.drawRect(x + c * block, y + r * block, x + (c + 1) * block, y + (r + 1) * block, ghost)
+            }
+        }
         for (pass in 0..1) {
             val paint = if (pass == 0) shadow else ink
             val o = if (pass == 0) off else 0f

@@ -402,6 +402,7 @@ class LauncherActivity : Activity() {
         (header.layoutParams as FrameLayout.LayoutParams).topMargin = insetTop + gap * 2
         header.visibility = if (prefs.homeClock) View.VISIBLE else View.GONE
         clock.accent = prefs.accent
+        clock.font = prefs.clockFont
         val headerHeight = if (prefs.homeClock) block * (PixelGlyphs.H + 1) + Pixel.dpi(this, 30) + gap * 2 else 0
 
         workspace.setPadding(gap, insetTop + gap + headerHeight, gap, insetBottom + gap * 2 + dockHeight + Pixel.dpi(this, 20))
@@ -1126,6 +1127,9 @@ class LauncherActivity : Activity() {
                 }
             }))
         media.current()?.let { cards.addView(TodayCards.media(this, accent, it)) }
+        Tickets.next(this)?.let { cards.addView(TicketView.make(this, it, accent), android.widget.LinearLayout.LayoutParams(-1, -2).apply {
+            bottomMargin = Pixel.dpi(this@LauncherActivity, 14)
+        }) }
         cards.addView(TodayCards.family(this, accent, account.signedIn, familyEvents, familyProblem) {
             startActivity(Intent(this, SettingsActivity::class.java))
         })

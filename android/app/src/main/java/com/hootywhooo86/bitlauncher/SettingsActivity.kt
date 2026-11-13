@@ -388,6 +388,11 @@ class SettingsActivity : Activity() {
                 body.addView(choice(look.name.uppercase(), prefs.lockStyle == look.key) { changed { prefs.lockStyle = look.key } }.full())
             }
             body.addView(note((LockLooks.ALL.firstOrNull { it.key == prefs.lockStyle } ?: LockLooks.ALL[0]).about + " PREVIEW below shows it."))
+            body.addView(Pixel.label(this, "CLOCK FONT", 9f, Pixel.MUTED).apply { setPadding(0, Pixel.dpi(context, 12), 0, Pixel.dpi(context, 6)) })
+            for ((key, name) in ClockFonts.ALL) {
+                body.addView(choice(name.uppercase(), prefs.clockFont == key) { changed { prefs.clockFont = key } }.full())
+            }
+            body.addView(note("Used by the home screen clock too. Hold the camera or flashlight in the lock screen's bottom corners to use them. Your next alarm (within 12 hours) and next shift show on their own."))
             body.addView(Pixel.label(this, "SHOW ON LOCK SCREEN", 9f, Pixel.MUTED).apply { setPadding(0, Pixel.dpi(context, 12), 0, Pixel.dpi(context, 6)) })
             row(listOf("APP NAMES", "TITLES", "FULL TEXT").mapIndexed { i, label ->
                 choice(label, prefs.lockDetail == i) { changed { prefs.lockDetail = i } }

@@ -108,6 +108,15 @@
             android:authorities="com.hootywhooo86.bitlauncher.theme"
             android:exported="true" />
 
+        <!-- Railway Time (or another 128bit app) sets the next train for the ticket stub. Display only. -->
+        <receiver
+            android:name=".TicketReceiver"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="com.hootywhooo86.bitlauncher.SET_TICKET" />
+            </intent-filter>
+        </receiver>
+
         <!-- "Add to home screen" from other apps: pinned shortcuts and widgets. Asks first. -->
         <activity
             android:name=".AddItemActivity"

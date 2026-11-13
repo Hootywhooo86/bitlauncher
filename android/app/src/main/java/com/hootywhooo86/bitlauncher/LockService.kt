@@ -120,7 +120,13 @@ class LockOverlay(private val service: AccessibilityService) : LockHost {
             remove()
         }
         Pixel.load(service)
-        val f = android.widget.FrameLayout(service)
+        // Folding or unfolding while it's up re-lays it out (two columns when unfolded).
+        val f = object : android.widget.FrameLayout(service) {
+            override fun onConfigurationChanged(newConfig: android.content.res.Configuration) {
+                super.onConfigurationChanged(newConfig)
+                post { relayout() }
+            }
+        }
         frame = f
         val lp = android.view.WindowManager.LayoutParams(
             android.view.WindowManager.LayoutParams.MATCH_PARENT,
@@ -134,6 +140,18 @@ class LockOverlay(private val service: AccessibilityService) : LockHost {
             if (Build.VERSION.SDK_INT >= 30) layoutInDisplayCutoutMode = android.view.WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_ALWAYS
         }
         wm.addView(f, lp)
+        val s = LockScreen(service, this)
+        screen = s
+        s.create()
+        s.start()
+    }
+
+    private fun relayout() {
+        if (frame == null) return
+        screen?.let {
+            it.stop()
+            it.destroy()
+        }
         val s = LockScreen(service, this)
         screen = s
         s.create()

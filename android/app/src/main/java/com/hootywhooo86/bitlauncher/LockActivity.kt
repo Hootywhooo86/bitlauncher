@@ -251,6 +251,8 @@ class LockScreen(base: Context, private val host: LockHost) : android.content.Co
         date.text = (if (look == "terminal") "> DATE  " else "") + DateFormat.getDateInstance(DateFormat.FULL).format(Date()).uppercase()
         clock.update(animate = false)
         renderInfo()
+        renderTicket()
+        torch.start()
         media.start()
         // The battery broadcast is sticky: registering hands back the current state at once.
         registerReceiver(battery, IntentFilter(Intent.ACTION_BATTERY_CHANGED))?.let(::showCharge)
@@ -261,6 +263,7 @@ class LockScreen(base: Context, private val host: LockHost) : android.content.Co
         if (!started) return
         started = false
         NotificationHub.unlisten(onNotes)
+        torch.stop()
         media.stop()
         unregisterReceiver(battery)
         charge.charging = false
@@ -292,11 +295,28 @@ class LockScreen(base: Context, private val host: LockHost) : android.content.Co
         }
         root.content = content
 
-        clock = PixelClockView(this, blink = true).apply { this.accent = accent }
+        clock = PixelClockView(this, blink = true).apply { this.accent = accent; font = prefs.clockFont }
         // On a big screen (an unfolded Fold) the clock and cards keep a readable size.
         val screenW = resources.displayMetrics.widthPixels
-        listW = minOf(screenW - Pixel.dpi(this, 40), Pixel.dpi(this, 520))
-        var clockW = minOf(screenW - Pixel.dpi(this, 48), Pixel.dpi(this, 400))
+        val cfg = resources.configuration
+        // Unfolded: clock on the left, notifications on the right.
+        val wide = look != "pocket" && cfg.screenWidthDp >= 600 && cfg.screenWidthDp >= cfg.screenHeightDp * 0.9f
+        val half = if (wide) screenW / 2 else screenW
+        listW = minOf(half - Pixel.dpi(this, 40), Pixel.dpi(this, 520))
+        var clockW = minOf(half - Pixel.dpi(this, 48), Pixel.dpi(this, 400))
+        val col1: LinearLayout
+        val col2: LinearLayout
+        if (wide) {
+            content.orientation = LinearLayout.HORIZONTAL
+            content.gravity = Gravity.TOP
+            col1 = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; gravity = Gravity.CENTER_HORIZONTAL }
+            col2 = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; gravity = Gravity.CENTER_HORIZONTAL }
+            content.addView(col1, LinearLayout.LayoutParams(0, -2, 1f))
+            content.addView(col2, LinearLayout.LayoutParams(0, -2, 1f))
+        } else {
+            col1 = content
+            col2 = content
+        }
         var pocket: PocketDrawable? = null
         when (look) {
             "minimal" -> clockW = minOf(screenW - Pixel.dpi(this, 24), Pixel.dpi(this, 560))
@@ -310,22 +330,22 @@ class LockScreen(base: Context, private val host: LockHost) : android.content.Co
                 listW -= 2 * bz + Pixel.dpi(this, 20)
                 clockW = minOf(clockW, listW - Pixel.dpi(this, 16))
             }
-            "terminal" -> content.addView(Pixel.label(this, "BIT OS  ·  READY.", 10f, Pixel.MUTED).apply {
+            "terminal" -> col1.addView(Pixel.label(this, "BIT OS  ·  READY.", 10f, Pixel.MUTED).apply {
                 gravity = Gravity.START
                 setPadding(Pixel.dpi(context, 24), 0, 0, Pixel.dpi(context, 16))
             }, LinearLayout.LayoutParams(-1, -2))
-            "departures" -> content.addView(Pixel.label(this, "DEPARTURES", 12f, Pixel.BG).apply {
+            "departures" -> col1.addView(Pixel.label(this, "DEPARTURES", 12f, Pixel.BG).apply {
                 gravity = Gravity.CENTER
                 val p = Pixel.dpi(context, 8)
                 setPadding(p, p, p, p)
                 setBackgroundColor(accent)
             }, LinearLayout.LayoutParams(listW, -2).apply { bottomMargin = Pixel.dpi(this@LockScreen, 18) })
-            "arcade" -> content.addView(Pixel.label(this, "PLAYER 1", 12f, accent).apply {
+            "arcade" -> col1.addView(Pixel.label(this, "PLAYER 1", 12f, accent).apply {
                 gravity = Gravity.CENTER
                 setPadding(0, 0, 0, Pixel.dpi(context, 16))
             }, LinearLayout.LayoutParams(-1, -2))
         }
-        content.addView(clock, LinearLayout.LayoutParams(clockW, -2))
+        col1.addView(clock, LinearLayout.LayoutParams(clockW, -2))
         date = Pixel.label(this, "", 11f, Pixel.MUTED).apply {
             gravity = Gravity.CENTER
             setPadding(0, Pixel.dpi(context, 14), 0, Pixel.dpi(context, 6))
@@ -347,13 +367,13 @@ class LockScreen(base: Context, private val host: LockHost) : android.content.Co
             info.setPadding(0, Pixel.dpi(this, 2), 0, Pixel.dpi(this, 8))
             status.addView(date, LinearLayout.LayoutParams(-1, -2))
             status.addView(info, LinearLayout.LayoutParams(-1, -2))
-            content.addView(status, LinearLayout.LayoutParams(listW, -2).apply {
+            col1.addView(status, LinearLayout.LayoutParams(listW, -2).apply {
                 topMargin = Pixel.dpi(this@LockScreen, 18)
                 bottomMargin = Pixel.dpi(this@LockScreen, 18)
             })
         } else {
-            content.addView(date, LinearLayout.LayoutParams(-1, -2))
-            content.addView(info, LinearLayout.LayoutParams(-1, -2))
+            col1.addView(date, LinearLayout.LayoutParams(-1, -2))
+            col1.addView(info, LinearLayout.LayoutParams(-1, -2))
         }
         charge = ChargeView(this).also { it.accent = accent; it.style = prefs.chargeStyle }
         chargeText = Pixel.label(this, "", 10f, Pixel.INK).apply { gravity = Gravity.CENTER }
@@ -363,11 +383,13 @@ class LockScreen(base: Context, private val host: LockHost) : android.content.Co
             addView(charge, LinearLayout.LayoutParams(-1, -2))
             addView(chargeText, LinearLayout.LayoutParams(-1, -2).apply { topMargin = Pixel.dpi(context, 8) })
         }
-        content.addView(chargeBox, LinearLayout.LayoutParams(minOf(listW, Pixel.dpi(this, 360)), -2).apply { bottomMargin = Pixel.dpi(this@LockScreen, 22) })
+        ticketBox = FrameLayout(this)
+        col1.addView(ticketBox, LinearLayout.LayoutParams(minOf(listW, Pixel.dpi(this, 420)), -2).apply { bottomMargin = Pixel.dpi(this@LockScreen, 18) })
+        col1.addView(chargeBox, LinearLayout.LayoutParams(minOf(listW, Pixel.dpi(this, 360)), -2).apply { bottomMargin = Pixel.dpi(this@LockScreen, 22) })
         mediaBox = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
-        content.addView(mediaBox, LinearLayout.LayoutParams(listW, -2))
+        (if (wide) col1 else col2).addView(mediaBox, LinearLayout.LayoutParams(listW, -2))
         list = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
-        content.addView(list, LinearLayout.LayoutParams(listW, -2))
+        col2.addView(list, LinearLayout.LayoutParams(listW, -2))
         root.addView(content, if (pocket != null) FrameLayout.LayoutParams(-2, -2, Gravity.TOP or Gravity.CENTER_HORIZONTAL)
             else FrameLayout.LayoutParams(-1, -2, Gravity.TOP))
 
@@ -384,6 +406,13 @@ class LockScreen(base: Context, private val host: LockHost) : android.content.Co
         }
         root.addView(hintBox, FrameLayout.LayoutParams(-1, -2, Gravity.BOTTOM))
         bob()
+
+        // Camera and flashlight in the bottom corners. Hold to use, so a pocket can't.
+        val size = Pixel.dpi(this, 52)
+        camera = CornerButton(this, CornerButton.CAMERA, accent).apply { hold(this) { openCamera() } }
+        torchButton = CornerButton(this, CornerButton.TORCH, accent).apply { hold(this) { torch.toggle() } }
+        root.addView(torchButton, FrameLayout.LayoutParams(size, size, Gravity.BOTTOM or Gravity.START))
+        root.addView(camera, FrameLayout.LayoutParams(size, size, Gravity.BOTTOM or Gravity.END))
         if (look == "arcade") {
             // CRT scanlines over everything, and the prompt fades like an attract screen.
             root.addView(ScreenTexture(this, grid = false), FrameLayout.LayoutParams(-1, -1))
@@ -405,10 +434,51 @@ class LockScreen(base: Context, private val host: LockHost) : android.content.Co
             }
             (content.layoutParams as FrameLayout.LayoutParams).topMargin = top + Pixel.dpi(this, 48)
             ((hint.parent as View).layoutParams as FrameLayout.LayoutParams).bottomMargin = bottom + Pixel.dpi(this, 24)
+            for (b in listOf(camera, torchButton)) (b.layoutParams as FrameLayout.LayoutParams).apply {
+                bottomMargin = bottom + Pixel.dpi(this@LockScreen, 20)
+                leftMargin = Pixel.dpi(this@LockScreen, 24)
+                rightMargin = Pixel.dpi(this@LockScreen, 24)
+            }
             content.requestLayout()
             insets
         }
         return root
+    }
+
+    private lateinit var ticketBox: FrameLayout
+    private lateinit var camera: CornerButton
+    private lateinit var torchButton: CornerButton
+    private val torch by lazy { Torch(this) { torchButton.on = it } }
+
+    /** Hold for a moment to use [button]; a tap just says to hold. */
+    private fun hold(button: View, action: () -> Unit) {
+        button.setOnLongClickListener {
+            button.performHapticFeedback(android.view.HapticFeedbackConstants.LONG_PRESS)
+            action()
+            true
+        }
+        button.setOnClickListener { Pixel.say(this, "Hold to use.") }
+    }
+
+    /** The camera, without unlocking: Android's secure camera mode while locked. */
+    private fun openCamera() {
+        val locked = getSystemService(KeyguardManager::class.java).isKeyguardLocked
+        val intent = Intent(if (locked) android.provider.MediaStore.INTENT_ACTION_STILL_IMAGE_CAMERA_SECURE else android.provider.MediaStore.INTENT_ACTION_STILL_IMAGE_CAMERA)
+            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        try {
+            startActivity(intent)
+            leaving = true
+            host.close()
+        } catch (e: Exception) {
+            Pixel.say(this, "No camera app could open from the lock screen.")
+        }
+    }
+
+    private fun renderTicket() {
+        ticketBox.removeAllViews()
+        val t = Tickets.next(this)
+        ticketBox.visibility = if (t == null) View.GONE else View.VISIBLE
+        if (t != null) ticketBox.addView(TicketView.make(this, t, prefs.accent), FrameLayout.LayoutParams(-1, -2))
     }
 
     private var float: android.animation.ValueAnimator? = null
@@ -723,6 +793,9 @@ class LockScreen(base: Context, private val host: LockHost) : android.content.Co
             val time = CalendarSource.whenText(this, e).uppercase()
             lines += if (showTitle) "NEXT  $time  ${e.title.uppercase()}" else "NEXT EVENT  $time"
         }
+        alarmLine(System.currentTimeMillis(), nextAlarm(this), nextAlarm(this)?.let {
+            android.text.format.DateFormat.getTimeFormat(this).format(Date(it))
+        } ?: "")?.let { lines.add(0, it) }
         info.text = lines.joinToString("\n")
         info.visibility = if (lines.isEmpty()) View.GONE else View.VISIBLE
     }
