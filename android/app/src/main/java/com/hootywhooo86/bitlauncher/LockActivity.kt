@@ -429,9 +429,18 @@ class LockScreen(base: Context, private val host: LockHost) : android.content.Co
         if (!NotificationHub.hasAccess(this)) return // the lock screen still shows the clock
         val lines = NotePrivacy.lockLines(NotificationHub.snapshot(), prefs.lockDetail, NotificationHub.systemHidesSensitive(this))
         val accent = prefs.accent
-        if (look == "minimal") {
+        if (look == "minimal" && !minimalOpen) {
             LockLooks.summary(lines) { NoteCards.appName(this, it) }?.let {
-                list.addView(Pixel.label(this, it, 10f, Pixel.INK).apply { gravity = Gravity.CENTER })
+                list.addView(Pixel.label(this, it, 10f, Pixel.INK).apply {
+                    gravity = Gravity.CENTER
+                    val p = Pixel.dpi(context, 10)
+                    setPadding(p, p, p, p)
+                    isClickable = true
+                    setOnClickListener {
+                        minimalOpen = true
+                        renderNotes(animate = true)
+                    }
+                })
             }
             return
         }
@@ -445,8 +454,23 @@ class LockScreen(base: Context, private val host: LockHost) : android.content.Co
             "pocket" -> 4
             else -> 5
         }
-        lines.take(max).forEachIndexed { i, line -> list.addView(row(line, accent, animate, i)) }
-        if (lines.size > max) {
+        if (expanded != null && lines.none { "${it.pkg}/${it.user}" == expanded }) expanded = null
+        // With an app opened up, only it shows, so its notifications have room.
+        val showing = if (expanded == null) lines.take(max) else lines.filter { "${it.pkg}/${it.user}" == expanded }
+        showing.forEachIndexed { i, line ->
+            list.addView(row(line, accent, animate && expanded == null, i))
+            if ("${line.pkg}/${line.user}" == expanded) list.addView(opened(line, accent))
+        }
+        if (expanded == null && NotificationHub.snapshot().any { NotePrivacy.countable(it) && it.clearable }) {
+            list.addView(Pixel.label(this, "CLEAR ALL", 9f, Pixel.INK).apply {
+                gravity = Gravity.CENTER
+                val p = Pixel.dpi(context, 10)
+                setPadding(p, p, p, p)
+                isClickable = true
+                setOnClickListener { NotificationHub.dismissAll() }
+            }, LinearLayout.LayoutParams(-2, -2).apply { gravity = Gravity.CENTER_HORIZONTAL; topMargin = Pixel.dpi(this@LockScreen, 4) })
+        }
+        if (expanded == null && lines.size > max) {
             list.addView(Pixel.label(this, "+${lines.size - max} MORE APPS", 9f, Pixel.MUTED).apply {
                 gravity = Gravity.CENTER
                 setPadding(0, Pixel.dpi(context, 8), 0, 0)
@@ -512,7 +536,7 @@ class LockScreen(base: Context, private val host: LockHost) : android.content.Co
         val frame = FrameLayout(this).apply {
             layoutParams = LinearLayout.LayoutParams(-1, -2).apply { bottomMargin = Pixel.dpi(context, 12) }
             isClickable = true
-            setOnClickListener { unlock(line) }
+            setOnClickListener { tapped(line) }
         }
         val box = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
@@ -547,7 +571,7 @@ class LockScreen(base: Context, private val host: LockHost) : android.content.Co
         val p = Pixel.dpi(context, 6)
         setPadding(p, p, p, p)
         isClickable = true
-        setOnClickListener { unlock(line) }
+        setOnClickListener { tapped(line) }
         addView(Pixel.label(context, LockLooks.place(index), 10f, if (index == 0) accent else Pixel.MUTED), LinearLayout.LayoutParams(Pixel.dpi(context, 44), -2))
         addView(spriteView(line, 18).apply { (layoutParams as LinearLayout.LayoutParams).rightMargin = Pixel.dpi(context, 8) })
         addView(Pixel.label(context, appName.uppercase().take(12), 10f, Pixel.INK), LinearLayout.LayoutParams(0, -2, 1f))
@@ -575,7 +599,7 @@ class LockScreen(base: Context, private val host: LockHost) : android.content.Co
             setPadding(0, Pixel.dpi(context, 3), 0, Pixel.dpi(context, 3))
             layoutParams = LinearLayout.LayoutParams(-1, -2)
             isClickable = true
-            setOnClickListener { unlock(line) }
+            setOnClickListener { tapped(line) }
         }
     }
 
@@ -587,7 +611,7 @@ class LockScreen(base: Context, private val host: LockHost) : android.content.Co
         setPadding(b, b, b + Pixel.dpi(context, 2), b + Pixel.dpi(context, 2))
         layoutParams = LinearLayout.LayoutParams(-1, -2).apply { bottomMargin = Pixel.dpi(context, 10) }
         isClickable = true
-        setOnClickListener { unlock(line) }
+        setOnClickListener { tapped(line) }
         addView(LinearLayout(context).apply {
             gravity = Gravity.CENTER_VERTICAL
             setBackgroundColor(accent)
@@ -617,7 +641,7 @@ class LockScreen(base: Context, private val host: LockHost) : android.content.Co
             if (shaded) setBackgroundColor(withAlpha(Pixel.PANEL, 230))
             if (line != null) {
                 isClickable = true
-                setOnClickListener { unlock(line) }
+                setOnClickListener { tapped(line) }
             }
             addView(Pixel.label(context, time.uppercase(), 10f, timeColor), LinearLayout.LayoutParams(Pixel.dpi(context, 72), -2))
             addView(Pixel.label(context, from.take(14), 10f, fromColor).apply { maxLines = 1 }, LinearLayout.LayoutParams(0, -2, 1f))
@@ -631,7 +655,7 @@ class LockScreen(base: Context, private val host: LockHost) : android.content.Co
         gravity = Gravity.CENTER_VERTICAL
         layoutParams = LinearLayout.LayoutParams(-1, -2).apply { bottomMargin = Pixel.dpi(context, 10) }
         isClickable = true
-        setOnClickListener { unlock(line) }
+        setOnClickListener { tapped(line) }
         addView(spriteView(line, 24).apply { (layoutParams as LinearLayout.LayoutParams).rightMargin = Pixel.dpi(context, 10) })
         val words = LinearLayout(context).apply { orientation = LinearLayout.VERTICAL }
         words.addView(Pixel.label(context, if (line.count > 1) "${appName.uppercase()} x${line.count}" else appName.uppercase(), 9f, accent))
@@ -650,7 +674,7 @@ class LockScreen(base: Context, private val host: LockHost) : android.content.Co
             setPadding(p, p, p + Pixel.dpi(context, 2), p + Pixel.dpi(context, 2))
             layoutParams = LinearLayout.LayoutParams(-1, -2).apply { bottomMargin = Pixel.dpi(context, 8) }
             isClickable = true
-            setOnClickListener { unlock(line) }
+            setOnClickListener { tapped(line) }
         }
         val sprite = icons.getForPackage(line.pkg, line.user)
         row.addView(ImageView(this).apply {
@@ -741,6 +765,90 @@ class LockScreen(base: Context, private val host: LockHost) : android.content.Co
         this.root = dissolve
         host.show(dissolve)
         dissolve.start()
+    }
+
+    /** The minimal look's summary line was tapped: show the apps. */
+    private var minimalOpen = false
+
+    /** "pkg/user" of the app opened up to show its notifications, or null. */
+    private var expanded: String? = null
+
+    /** Tapping an app opens it up (or closes it again); its notifications show one by one. */
+    private fun tapped(line: LockLine) {
+        val id = "${line.pkg}/${line.user}"
+        expanded = if (expanded == id) null else id
+        renderNotes(animate = false)
+    }
+
+    /** One app's notifications: tap one to unlock into it, swipe it sideways to clear it. */
+    private fun opened(line: LockLine, accent: Int): View {
+        val notes = NotePrivacy.lockNotes(NotificationHub.snapshot(), line.pkg, line.user, prefs.lockDetail, NotificationHub.systemHidesSensitive(this))
+        val box = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            layoutParams = LinearLayout.LayoutParams(-1, -2).apply { bottomMargin = Pixel.dpi(context, 12) }
+            setPadding(Pixel.dpi(context, 16), 0, 0, 0)
+        }
+        val previewsHidden = notes.all { it.title == null && it.text == null }
+        notes.take(5).forEach { n ->
+            lateinit var card: SwipeCard
+            card = SwipeCard(this, n.clearable) {
+                NotificationHub.dismiss(n.key)
+                (card.parent as? LinearLayout)?.removeView(card)
+            }
+            val body = LinearLayout(this).apply {
+                orientation = LinearLayout.HORIZONTAL
+                background = PanelDrawable(context, withAlpha(Pixel.PANEL, 240), withAlpha(accent, 150))
+                val p = Pixel.dpi(context, 10)
+                setPadding(p, p, p + Pixel.dpi(context, 2), p + Pixel.dpi(context, 2))
+                isClickable = true
+                setOnClickListener { openNote(n) }
+            }
+            val words = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+            words.addView(plain(n.title ?: "New notification", Pixel.INK, 14f, 1))
+            n.text?.let { words.addView(plain(it, Pixel.MUTED, 13f, 3)) }
+            body.addView(words, LinearLayout.LayoutParams(0, -2, 1f))
+            body.addView(Pixel.label(this, NoteCards.ago(n.posted).uppercase(), 8f, Pixel.MUTED), LinearLayout.LayoutParams(-2, -2).apply {
+                leftMargin = Pixel.dpi(this@LockScreen, 8)
+            })
+            card.addView(body, FrameLayout.LayoutParams(-1, -2))
+            box.addView(card, LinearLayout.LayoutParams(-1, -2).apply { bottomMargin = Pixel.dpi(this@LockScreen, 6) })
+        }
+        if (notes.size > 5) box.addView(Pixel.label(this, "+${notes.size - 5} MORE", 9f, Pixel.MUTED).apply { setPadding(0, 0, 0, Pixel.dpi(context, 8)) })
+        if (previewsHidden) box.addView(plain(
+            if (NotificationHub.systemHidesSensitive(this)) "Your phone hides notification text on the lock screen. Unlock to read, or allow it in your phone's notification settings."
+            else "Previews are off. To read them here: bitlauncher Settings, Lock screen, Show on lock screen, Full text.",
+            Pixel.MUTED, 12f, 4,
+        ).apply { setPadding(0, Pixel.dpi(context, 2), 0, Pixel.dpi(context, 8)) })
+        box.addView(LinearLayout(this).apply {
+            gravity = Gravity.END
+            if (notes.any { it.clearable }) addView(Pixel.button(context, "CLEAR", accent) {
+                notes.filter { it.clearable }.forEach { NotificationHub.dismiss(it.key) }
+                expanded = null
+            })
+            addView(Pixel.button(context, "BACK", accent) { tapped(line) }, LinearLayout.LayoutParams(-2, -2).apply {
+                leftMargin = Pixel.dpi(this@LockScreen, 8)
+            })
+            addView(Pixel.button(context, "OPEN", accent) { unlock(line) }, LinearLayout.LayoutParams(-2, -2).apply {
+                leftMargin = Pixel.dpi(this@LockScreen, 8)
+            })
+        }, LinearLayout.LayoutParams(-1, -2))
+        return box
+    }
+
+    private fun openNote(n: LockNote) {
+        val then = {
+            n.intent?.let {
+                try {
+                    it.send()
+                    if (n.autoCancel && n.clearable) NotificationHub.dismiss(n.key)
+                } catch (e: Exception) {
+                    Pixel.say(this, "That notification can't be opened any more.")
+                }
+            }
+            leave()
+        }
+        val keyguard = getSystemService(KeyguardManager::class.java)
+        if (!keyguard.isKeyguardLocked) then() else host.dismissKeyguard(then, ::resetSwipe)
     }
 
     private fun unlock(line: LockLine?) {

@@ -34,6 +34,9 @@ data class Note(
     val loud: Boolean = true,
 )
 
+/** One notification of an opened-up app on the lock screen, with only what the privacy rules allow. */
+data class LockNote(val key: String, val title: String?, val text: String?, val intent: PendingIntent?, val clearable: Boolean, val autoCancel: Boolean, val posted: Long)
+
 /** One row on the lock screen: an app, how many, and whatever text the privacy rules allow. */
 data class LockLine(val pkg: String, val user: Long, val count: Int, val title: String?, val text: String?, val intent: PendingIntent?, val posted: Long = 0L)
 
@@ -54,20 +57,36 @@ object NotePrivacy {
      */
     fun lockLines(notes: List<Note>, detail: Int, systemHidesSensitive: Boolean): List<LockLine> {
         val level = if (systemHidesSensitive) APPS_ONLY else detail
-        val shown = notes.filter { countable(it) && it.visibility != Notification.VISIBILITY_SECRET }
+        val shown = notes.filter(::lockVisible)
         return shown.groupBy { it.pkg to it.user }
             .map { (app, list) ->
                 val newest = list.maxBy { it.posted }
-                val (title, text) = when {
-                    level == APPS_ONLY -> null to null
-                    newest.visibility == Notification.VISIBILITY_PRIVATE ->
-                        newest.publicTitle?.takeIf { it.isNotBlank() } to newest.publicText?.takeIf { level == FULL && it.isNotBlank() }
-                    else -> newest.title.takeIf { it.isNotBlank() } to newest.text.takeIf { level == FULL && it.isNotBlank() }
-                }
+                val (title, text) = words(newest, level)
                 LockLine(app.first, app.second, list.size, title, text, newest.intent, newest.posted) to newest.posted
             }
             .sortedByDescending { it.second }
             .map { it.first }
+    }
+
+    private fun lockVisible(n: Note) = countable(n) && n.visibility != Notification.VISIBILITY_SECRET
+
+    /** The title and text one notification may show at [level]. */
+    private fun words(n: Note, level: Int): Pair<String?, String?> = when {
+        level == APPS_ONLY -> null to null
+        n.visibility == Notification.VISIBILITY_PRIVATE ->
+            n.publicTitle?.takeIf { it.isNotBlank() } to n.publicText?.takeIf { level == FULL && it.isNotBlank() }
+        else -> n.title.takeIf { it.isNotBlank() } to n.text.takeIf { level == FULL && it.isNotBlank() }
+    }
+
+    /** Every notification from one app, newest first, by the same rules as [lockLines]. */
+    fun lockNotes(notes: List<Note>, pkg: String, user: Long, detail: Int, systemHidesSensitive: Boolean): List<LockNote> {
+        val level = if (systemHidesSensitive) APPS_ONLY else detail
+        return notes.filter { it.pkg == pkg && it.user == user && lockVisible(it) }
+            .sortedByDescending { it.posted }
+            .map { n ->
+                val (title, text) = words(n, level)
+                LockNote(n.key, title, text, n.intent, n.clearable, n.autoCancel, n.posted)
+            }
     }
 }
 
