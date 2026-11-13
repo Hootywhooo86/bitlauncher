@@ -3,6 +3,7 @@ package com.hootywhooo86.bitlauncher
 import android.app.Notification
 import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -34,14 +35,14 @@ class PixelBitsTest {
     }
 
     @Test
-    fun privateNotificationsShowOnlyTheirPublicVersion() {
-        val withPublic = note("mail", visibility = Notification.VISIBILITY_PRIVATE, publicTitle = "2 new emails")
-        val without = note("chat", visibility = Notification.VISIBILITY_PRIVATE, posted = 2)
-        val lines = NotePrivacy.lockLines(listOf(withPublic, without), NotePrivacy.FULL, false).associateBy { it.pkg }
-        assertEquals("2 new emails", lines["mail"]!!.title)
-        assertNull(lines["mail"]!!.text)
-        assertNull(lines["chat"]!!.title)
-        assertNull(lines["chat"]!!.text)
+    fun privateNotificationsShowInFullWhenThePhoneAllowsSensitiveContent() {
+        // Like Android's own lock screen: Messenger and most chat apps mark messages private.
+        val chat = note("chat", visibility = Notification.VISIBILITY_PRIVATE)
+        val shown = NotePrivacy.lockLines(listOf(chat), NotePrivacy.FULL, false).single()
+        assertEquals("Sam", shown.title)
+        assertNotNull(shown.text)
+        // The phone's "hide sensitive content" still hides it.
+        assertNull(NotePrivacy.lockLines(listOf(chat), NotePrivacy.FULL, true).single().title)
     }
 
     @Test

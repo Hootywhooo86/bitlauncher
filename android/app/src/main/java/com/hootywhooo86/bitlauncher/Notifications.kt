@@ -51,7 +51,8 @@ object NotePrivacy {
     /**
      * Rows for the lock screen, newest app first, one row per app.
      * - SECRET notifications never show, not even the app.
-     * - PRIVATE ones show their public version if the app gave one, otherwise only the app.
+     * - PRIVATE ones show in full, like on Android's own lock screen, since reaching here means
+     *   the phone allows sensitive content on the lock screen (see below).
      * - [detail] is the most the user allows; [systemHidesSensitive] (the phone's own
      *   "hide sensitive content") caps everything at app names.
      */
@@ -71,10 +72,8 @@ object NotePrivacy {
     private fun lockVisible(n: Note) = countable(n) && n.visibility != Notification.VISIBILITY_SECRET
 
     /** The title and text one notification may show at [level]. */
-    private fun words(n: Note, level: Int): Pair<String?, String?> = when {
-        level == APPS_ONLY -> null to null
-        n.visibility == Notification.VISIBILITY_PRIVATE ->
-            n.publicTitle?.takeIf { it.isNotBlank() } to n.publicText?.takeIf { level == FULL && it.isNotBlank() }
+    private fun words(n: Note, level: Int): Pair<String?, String?> = when (level) {
+        APPS_ONLY -> null to null
         else -> n.title.takeIf { it.isNotBlank() } to n.text.takeIf { level == FULL && it.isNotBlank() }
     }
 

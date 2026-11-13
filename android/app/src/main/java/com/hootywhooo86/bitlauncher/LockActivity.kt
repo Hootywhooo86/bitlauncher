@@ -802,11 +802,14 @@ class LockScreen(base: Context, private val host: LockHost) : android.content.Co
             box.addView(card, LinearLayout.LayoutParams(-1, -2).apply { bottomMargin = Pixel.dpi(this@LockScreen, if (look in FLAT) 0 else 6) })
         }
         if (notes.size > 5) box.addView(Pixel.label(this, "+${notes.size - 5} MORE", 9f, Pixel.MUTED).apply { setPadding(0, 0, 0, Pixel.dpi(context, 8)) })
-        if (previewsHidden) box.addView(plain(
-            if (NotificationHub.systemHidesSensitive(this)) "Your phone hides notification text on the lock screen. Unlock to read, or allow it in your phone's notification settings."
-            else "Previews are off. To read them here: bitlauncher Settings, Lock screen, Show on lock screen, Full text.",
-            Pixel.MUTED, 12f, 4,
-        ).apply { setPadding(0, Pixel.dpi(context, 2), 0, Pixel.dpi(context, 8)) })
+        // Say why there's nothing to read, and only when it's true.
+        val why = when {
+            !previewsHidden -> null
+            NotificationHub.systemHidesSensitive(this) -> "Your phone hides notification text on the lock screen. To show it: phone Settings, Notifications, Notifications on lock screen, Show sensitive content."
+            prefs.lockDetail == NotePrivacy.APPS_ONLY -> "Previews are off. To read them here: bitlauncher Settings, Lock screen, Show on lock screen, Full text."
+            else -> "This app didn't include any text to show. Unlock to read it."
+        }
+        if (why != null) box.addView(plain(why, Pixel.MUTED, 12f, 4).apply { setPadding(0, Pixel.dpi(context, 2), 0, Pixel.dpi(context, 8)) })
         box.addView(LinearLayout(this).apply {
             gravity = Gravity.END
             setPadding(0, Pixel.dpi(context, if (look in FLAT) 8 else 0), 0, 0)
