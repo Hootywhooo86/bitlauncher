@@ -80,6 +80,13 @@ class SettingsActivity : Activity() {
             choice("UNLOCKED", !prefs.layoutLocked) { changed { prefs.layoutLocked = false } },
         ))
 
+        section("ICON LOOK")
+        body.addView(note("Reshape every app icon to match. Folders keep their own style."))
+        body.addView(iconPreview(), LinearLayout.LayoutParams(-1, -2).apply { bottomMargin = Pixel.dpi(this@SettingsActivity, 10) })
+        for ((key, name) in IconStyles.ALL) {
+            body.addView(choice(name.uppercase(), prefs.iconStyle == key) { changed { prefs.iconStyle = key } }.full())
+        }
+
         section("ICON SIZE")
         row(listOf("SMALL", "MEDIUM", "LARGE").mapIndexed { i, label ->
             choice(label, prefs.iconSize == i) { changed { prefs.iconSize = i } }
@@ -410,6 +417,31 @@ class SettingsActivity : Activity() {
             body.addView(Pixel.button(this, "PREVIEW", accent) {
                 startActivity(Intent(this, LockActivity::class.java))
             }.full())
+        }
+    }
+
+    /** Five of your own apps in the chosen look. */
+    private fun iconPreview(): View {
+        IconStyles.current = prefs.iconStyle
+        IconStyles.accent = prefs.accent
+        val icons = IconCache(this)
+        val users = getSystemService(android.os.UserManager::class.java)
+        val me = android.os.Process.myUserHandle()
+        val sprites = try {
+            getSystemService(android.content.pm.LauncherApps::class.java).getActivityList(null, me)
+                .asSequence()
+                .mapNotNull { icons.get(AppKey(it.componentName.packageName, it.componentName.className, users.getSerialNumberForUser(me))) }
+                .take(5).toList()
+        } catch (e: Exception) {
+            emptyList()
+        }
+        return LinearLayout(this).apply {
+            gravity = Gravity.CENTER
+            if (sprites.isEmpty()) addView(note("Your app icons show here once home has loaded them."))
+            for (s in sprites) addView(AppIconView(context).apply {
+                sprite = s
+                showLabel = false
+            }, LinearLayout.LayoutParams(0, Pixel.dpi(context, 64), 1f))
         }
     }
 

@@ -89,6 +89,8 @@ class LauncherActivity : Activity() {
         Pixel.load(this)
         prefs = Prefs(this)
         prefs.firstSeen // the first run is remembered from now on
+        IconStyles.current = prefs.iconStyle
+        IconStyles.accent = prefs.accent
         appliedTheme = prefs.theme
         appliedPack = prefs.iconPack
         icons = IconCache(this)
@@ -435,6 +437,9 @@ class LauncherActivity : Activity() {
             apps.reload()
         }
         refreshDots()
+        IconStyles.current = prefs.iconStyle
+        IconStyles.accent = prefs.accent
+        redrawIcons(drawer)
         menu = PixelMenu(this, prefs.accent)
         if (layout.grid != prefs.grid) {
             layout.resize(prefs.grid)
@@ -442,6 +447,12 @@ class LauncherActivity : Activity() {
         }
         positionChrome()
         rebuild()
+    }
+
+    /** Icons drawn somewhere home doesn't rebuild (the drawer) pick up a new look. */
+    private fun redrawIcons(v: View) {
+        if (v is AppIconView) v.invalidate()
+        if (v is ViewGroup) for (i in 0 until v.childCount) redrawIcons(v.getChildAt(i))
     }
 
     // ---------------------------------------------------------------- drawing the home screen

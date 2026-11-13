@@ -179,6 +179,11 @@ class Prefs(context: Context) {
         get() = sp.getString("popups", "home")!!
         set(v) = sp.edit().putString("popups", v).apply()
 
+    /** How app icons look (see IconStyles.ALL). */
+    var iconStyle: String
+        get() = sp.getString("iconStyle", "sprite")!!
+        set(v) = sp.edit().putString("iconStyle", v).apply()
+
     /** Clock digit style, home and lock screen (see ClockFonts.ALL). */
     var clockFont: String
         get() = sp.getString("clockFont", "blocks")!!
@@ -231,6 +236,7 @@ class Prefs(context: Context) {
         .put("lockStyle", lockStyle)
         .put("lockWallpaper", lockWallpaper)
         .put("clockFont", clockFont)
+        .put("iconStyle", iconStyle)
         .put("swipeDown", swipeDown)
         .put("popups", popups)
         .put("layoutLocked", layoutLocked)
@@ -260,6 +266,7 @@ class Prefs(context: Context) {
         lockStyle = o.optString("lockStyle", lockStyle)
         lockWallpaper = o.optBoolean("lockWallpaper", lockWallpaper)
         clockFont = o.optString("clockFont", clockFont)
+        iconStyle = o.optString("iconStyle", iconStyle)
         swipeDown = o.optString("swipeDown", swipeDown)
         popups = o.optString("popups", popups)
         layoutLocked = o.optBoolean("layoutLocked", layoutLocked)

@@ -212,7 +212,7 @@ class AppIconView(context: Context) : View(context) {
                 if (bmp != null) canvas.drawBitmap(bmp, null, dst, spritePaint) else canvas.drawRect(dst, placeholderPaint)
             }
         } else {
-            val bmp = sprite
+            val bmp = sprite?.let(IconStyles::styled)
             if (bmp != null) {
                 src.set(0, 0, bmp.width, bmp.height)
                 if (lifted) {
@@ -367,7 +367,7 @@ class AppIconView(context: Context) : View(context) {
                 folder.setBounds(r)
                 folder.draw(canvas)
             } else {
-                sprite?.let { canvas.drawBitmap(it, null, r, spritePaint) }
+                sprite?.let { canvas.drawBitmap(IconStyles.styled(it), null, r, spritePaint) }
             }
         }
     }

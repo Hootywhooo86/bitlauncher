@@ -165,3 +165,57 @@ class LockExtrasTest {
         Tickets.clear(ctx)
     }
 }
+
+@RunWith(RobolectricTestRunner::class)
+@Config(sdk = [35])
+@org.robolectric.annotation.GraphicsMode(org.robolectric.annotation.GraphicsMode.Mode.NATIVE)
+class IconStylesTest {
+    /** A made-up 32x32 sprite: a red square with a dark outline. */
+    private fun sample(color: Int): IntArray = IntArray(32 * 32) { i ->
+        val x = i % 32
+        val y = i / 32
+        when {
+            x in 7..24 && y in 7..24 -> color
+            x in 6..25 && y in 6..25 -> Pixel.SHADOW
+            else -> 0
+        }
+    }
+
+    @Test
+    fun everyLookKeepsTheGridAndChangesTheIcon() {
+        val red = sample(0xFFE04040.toInt())
+        for ((key, _) in IconStyles.ALL) {
+            val out = IconStyles.render(red, key, 0xFF8B7CF6.toInt())
+            assertEquals(key, 32 * 32, out.size)
+            if (key != "sprite") assertTrue(key, !out.contentEquals(red))
+        }
+        // Mono keeps no trace of the icon's own colour.
+        assertTrue(IconStyles.render(red, "mono", 0).none { it == 0xFFE04040.toInt() })
+        // Shaped looks fill their corners differently: the coin is round, the block is not.
+        val coin = IconStyles.render(red, "coin", 0)
+        val block = IconStyles.render(red, "block", 0)
+        assertEquals(0, coin[0])
+        assertTrue(block[2 * 32 + 2] != 0)
+    }
+
+    @Test
+    fun previewSheet() {
+        val dir = System.getenv("SHOT_DIR") ?: return
+        val colors = intArrayOf(0xFFE04040.toInt(), 0xFF40A0E0.toInt(), 0xFF50C060.toInt(), 0xFFF0C040.toInt())
+        val scale = 4
+        val sheet = android.graphics.Bitmap.createBitmap((32 * scale + 12) * colors.size + 12, (32 * scale + 12) * IconStyles.ALL.size + 12, android.graphics.Bitmap.Config.ARGB_8888)
+        sheet.eraseColor(Pixel.BG)
+        val c = android.graphics.Canvas(sheet)
+        val paint = android.graphics.Paint().apply { isFilterBitmap = false }
+        IconStyles.ALL.forEachIndexed { row, (key, _) ->
+            colors.forEachIndexed { col, color ->
+                val px = IconStyles.render(sample(color), key, 0xFF8B7CF6.toInt())
+                val b = android.graphics.Bitmap.createBitmap(px, 32, 32, android.graphics.Bitmap.Config.ARGB_8888)
+                val l = 12f + col * (32 * scale + 12)
+                val t = 12f + row * (32 * scale + 12)
+                c.drawBitmap(b, null, android.graphics.RectF(l, t, l + 32 * scale, t + 32 * scale), paint)
+            }
+        }
+        java.io.File(dir, "icon-styles.png").outputStream().use { sheet.compress(android.graphics.Bitmap.CompressFormat.PNG, 100, it) }
+    }
+}
