@@ -35,7 +35,10 @@ class BitApp : Application() {
     private val screen = object : BroadcastReceiver() {
         override fun onReceive(context: Context, intent: Intent) {
             when (intent.action) {
-                Intent.ACTION_SCREEN_OFF -> showLock()
+                Intent.ACTION_SCREEN_OFF -> {
+                    LockWallpaper.sync(context)
+                    showLock()
+                }
                 Intent.ACTION_SCREEN_ON -> checkItOpened()
             }
         }

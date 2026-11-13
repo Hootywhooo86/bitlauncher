@@ -5,6 +5,8 @@
     <uses-permission android:name="android.permission.EXPAND_STATUS_BAR" />
     <!-- Only for pixel pop-ups "Everywhere", and only once you allow "Display over other apps". -->
     <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
+    <!-- Only if you turn on "On the phone's lock screen too": sets the lock screen wallpaper. -->
+    <uses-permission android:name="android.permission.SET_WALLPAPER" />
     <!-- Uninstall from the long-press menu. -->
     <uses-permission android:name="android.permission.REQUEST_DELETE_PACKAGES" />
     <!-- Only if you turn on contact search in Settings; asked for then, not before. -->
@@ -55,6 +57,16 @@
             android:launchMode="singleTask"
             android:showWhenLocked="true"
             android:taskAffinity="com.hootywhooo86.bitlauncher.lock"
+            android:theme="@style/Theme.Bit.Lock" />
+
+        <!-- Invisible: asks for the PIN pad when you swipe up on the pixel lock screen. -->
+        <activity
+            android:name=".UnlockActivity"
+            android:excludeFromRecents="true"
+            android:exported="false"
+            android:noHistory="true"
+            android:showWhenLocked="true"
+            android:taskAffinity="com.hootywhooo86.bitlauncher.unlock"
             android:theme="@style/Theme.Bit.Lock" />
 
         <service

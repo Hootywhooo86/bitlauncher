@@ -138,6 +138,18 @@ class SettingsActivity : Activity() {
             for ((key, name) in Light.TIMES) {
                 body.addView(choice(name.uppercase(), prefs.sceneTime == key) { changed { prefs.sceneTime = key } }.full())
             }
+            body.addView(Pixel.label(this, "ON THE PHONE'S LOCK SCREEN TOO", 9f, Pixel.MUTED).apply { setPadding(0, Pixel.dpi(context, 12), 0, Pixel.dpi(context, 6)) })
+            row(listOf(
+                choice("ON", prefs.lockWallpaper) {
+                    changed { prefs.lockWallpaper = true }
+                },
+                choice("OFF", !prefs.lockWallpaper) {
+                    val was = prefs.lockWallpaper
+                    changed { prefs.lockWallpaper = false }
+                    if (was) LockWallpaper.clear(this)
+                },
+            ))
+            body.addView(note("Sets your phone's own lock screen wallpaper to this scene, kept in step with the time of day and weather. Your home wallpaper isn't touched. Turning it off puts your phone's own wallpaper back on the lock screen."))
         }
 
         section("WEATHER")
@@ -265,6 +277,7 @@ class SettingsActivity : Activity() {
         val look = prefs.accent to prefs.theme
         change()
         prefs.touch()
+        LockWallpaper.sync(this)
         (application as? BitApp)?.syncLockScreen()
         if (look != (prefs.accent to prefs.theme)) FamilyTheme.broadcast(this)
         render()

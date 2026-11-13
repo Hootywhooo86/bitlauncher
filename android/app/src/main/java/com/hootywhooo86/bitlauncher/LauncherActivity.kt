@@ -1008,6 +1008,7 @@ class LauncherActivity : Activity() {
         scene.scene = key
         scene.accent = prefs.accent
         scene.timeOfDay = prefs.sceneTime
+        LockWallpaper.sync(this)
     }
 
     /** Fetch weather if it's on and stale; then let everything that shows it update. */

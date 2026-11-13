@@ -179,6 +179,11 @@ class Prefs(context: Context) {
         get() = sp.getString("popups", "home")!!
         set(v) = sp.edit().putString("popups", v).apply()
 
+    /** Put the pixel scene on the phone's own lock screen wallpaper too. */
+    var lockWallpaper: Boolean
+        get() = sp.getBoolean("lockWallpaper", false)
+        set(v) = sp.edit().putBoolean("lockWallpaper", v).apply()
+
     /** How the lock screen looks (see LockLooks.ALL). */
     var lockStyle: String
         get() = sp.getString("lockStyle", "classic")!!
@@ -219,6 +224,7 @@ class Prefs(context: Context) {
         .put("theme", theme)
         .put("chargeStyle", chargeStyle)
         .put("lockStyle", lockStyle)
+        .put("lockWallpaper", lockWallpaper)
         .put("swipeDown", swipeDown)
         .put("popups", popups)
         .put("layoutLocked", layoutLocked)
@@ -246,6 +252,7 @@ class Prefs(context: Context) {
         theme = o.optString("theme", theme)
         chargeStyle = o.optString("chargeStyle", chargeStyle)
         lockStyle = o.optString("lockStyle", lockStyle)
+        lockWallpaper = o.optBoolean("lockWallpaper", lockWallpaper)
         swipeDown = o.optString("swipeDown", swipeDown)
         popups = o.optString("popups", popups)
         layoutLocked = o.optBoolean("layoutLocked", layoutLocked)

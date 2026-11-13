@@ -148,9 +148,18 @@ class LockOverlay(private val service: AccessibilityService) : LockHost {
 
     override fun close() = remove()
 
-    /** The phone's own lock screen takes it from here; whatever was tapped opens once unlocked. */
+    /**
+     * Straight to the phone's PIN pad (fingerprint works there too), skipping its lock screen:
+     * a see-through screen asks Android for it while the pixel one dissolves away. Whatever was
+     * tapped opens once unlocked. If Android won't open that screen, its lock screen shows instead.
+     */
     override fun dismissKeyguard(done: () -> Unit, failed: () -> Unit) {
         afterUnlock = done
+        try {
+            service.startActivity(android.content.Intent(service, UnlockActivity::class.java)
+                .addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK or android.content.Intent.FLAG_ACTIVITY_NO_ANIMATION))
+        } catch (e: Exception) {
+        }
         screen?.leave()
     }
 
@@ -166,5 +175,35 @@ class LockOverlay(private val service: AccessibilityService) : LockHost {
             wm.removeView(f)
         } catch (e: Exception) {
         }
+    }
+}
+
+/**
+ * Invisible: asks Android for its PIN pad over the lock screen, then gets out of the way. Backing
+ * out of the PIN pad brings the pixel lock screen back.
+ */
+class UnlockActivity : android.app.Activity() {
+    override fun onCreate(savedInstanceState: android.os.Bundle?) {
+        super.onCreate(savedInstanceState)
+        setShowWhenLocked(true)
+        val keyguard = getSystemService(android.app.KeyguardManager::class.java)
+        if (!keyguard.isKeyguardLocked) {
+            finish()
+            return
+        }
+        keyguard.requestDismissKeyguard(this, object : android.app.KeyguardManager.KeyguardDismissCallback() {
+            override fun onDismissSucceeded() = done()
+            override fun onDismissCancelled() {
+                done()
+                LockService.showLock()
+            }
+            override fun onDismissError() = done()
+        })
+    }
+
+    private fun done() {
+        finish()
+        @Suppress("DEPRECATION")
+        overridePendingTransition(0, 0)
     }
 }
