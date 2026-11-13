@@ -342,7 +342,7 @@ class LockScreen(base: Context, private val host: LockHost) : android.content.Co
             }, LinearLayout.LayoutParams(listW, -2).apply { bottomMargin = Pixel.dpi(this@LockScreen, 18) })
             "arcade" -> col1.addView(Pixel.label(this, "PLAYER 1", 12f, accent).apply {
                 gravity = Gravity.CENTER
-                setPadding(0, 0, 0, Pixel.dpi(context, 16))
+                setPadding(0, 0, 0, Pixel.dpi(context, 28))
             }, LinearLayout.LayoutParams(-1, -2))
         }
         col1.addView(clock, LinearLayout.LayoutParams(clockW, -2))
@@ -432,7 +432,12 @@ class LockScreen(base: Context, private val host: LockHost) : android.content.Co
                 @Suppress("DEPRECATION")
                 insets.systemWindowInsetTop to insets.systemWindowInsetBottom
             }
-            (content.layoutParams as FrameLayout.LayoutParams).topMargin = top + Pixel.dpi(this, 48)
+            // The overlay window isn't always told about the status bar, so never assume less than
+            // its real height; then a generous gap so the top line (PLAYER 1 and the like) is clear.
+            val statusBar = resources.getIdentifier("status_bar_height", "dimen", "android").let { id ->
+                if (id != 0) resources.getDimensionPixelSize(id) else Pixel.dpi(this, 32)
+            }
+            (content.layoutParams as FrameLayout.LayoutParams).topMargin = maxOf(top, statusBar) + Pixel.dpi(this, 72)
             ((hint.parent as View).layoutParams as FrameLayout.LayoutParams).bottomMargin = bottom + Pixel.dpi(this, 24)
             for (b in listOf(camera, torchButton)) (b.layoutParams as FrameLayout.LayoutParams).apply {
                 bottomMargin = bottom + Pixel.dpi(this@LockScreen, 20)
