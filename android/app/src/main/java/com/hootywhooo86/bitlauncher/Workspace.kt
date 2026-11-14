@@ -190,7 +190,84 @@ class Workspace(context: Context) : ViewGroup(context) {
     override fun onScrollChanged(l: Int, t: Int, oldl: Int, oldt: Int) {
         super.onScrollChanged(l, t, oldl, oldt)
         if (width > 0) onScrolled?.invoke(l / width.toFloat())
+        applyTransition()
     }
+
+    /** How pages move between each other (see PageTransitions.ALL). */
+    var transition = "slide"
+        set(v) { field = v; applyTransition() }
+
+    private val dissolveCols = 12
+    private val dissolveRows = 20
+    private val dissolveRank by lazy { PageTransitions.dissolveOrder(dissolveCols, dissolveRows) }
+    private val clip = android.graphics.Path()
+
+    /** Where page [i] sits against the screen: 0 on screen, -1 one screen left, +1 one right. */
+    private fun offsetOf(i: Int): Float = if (width == 0) 0f else ((i / panes) * width - scrollX) / width.toFloat()
+
+    /** Set each page's transform for the current scroll; at rest every page is plain. */
+    private fun applyTransition() {
+        val motion = Pixel.motion(context)
+        for (i in 0 until childCount) {
+            val v = getChildAt(i)
+            val o = offsetOf(i)
+            val near = abs(o) < 1f
+            v.rotationY = 0f
+            v.scaleX = 1f
+            v.scaleY = 1f
+            v.alpha = 1f
+            v.translationX = 0f
+            if (!motion || !near || o == 0f) continue
+            val inScreen = v.left - (i / panes) * width // the page's x within its screen
+            when (transition) {
+                "cube" -> {
+                    // Turn about the shared edge, like the faces of a box.
+                    v.cameraDistance = width * 8f
+                    v.pivotX = if (o < 0) (width - inScreen).toFloat() else (-inScreen).toFloat()
+                    v.pivotY = v.height / 2f
+                    v.rotationY = 90f * o
+                }
+                "stack" -> if (o < 0) {
+                    // The page leaving stays put, shrinks and fades; the next one slides over it.
+                    v.translationX = -o * width
+                    val s = 1f - 0.15f * -o
+                    v.scaleX = s
+                    v.scaleY = s
+                    v.alpha = 1f + o
+                }
+                "dissolve" -> v.translationX = -o * width // both pages stay put; dispatchDraw picks blocks
+            }
+        }
+        invalidate()
+    }
+
+    override fun drawChild(canvas: android.graphics.Canvas, child: View, drawingTime: Long): Boolean {
+        if (transition != "dissolve" || !Pixel.motion(context)) return super.drawChild(canvas, child, drawingTime)
+        val i = indexOfChild(child)
+        val o = offsetOf(i)
+        if (o == 0f || abs(o) >= 1f) return super.drawChild(canvas, child, drawingTime)
+        // How far the swipe has got from the left page to the right one, 0 to 1. The right page
+        // shows the blocks whose turn has come, the left page the rest, so together they always
+        // fill the screen exactly, whichever way you swipe.
+        val p = if (o < 0) -o else 1f - o
+        val cutoff = (p * dissolveCols * dissolveRows).toInt()
+        val bw = width / dissolveCols.toFloat()
+        val bh = height / dissolveRows.toFloat()
+        val showRank: (Int) -> Boolean = if (o > 0) { r -> r < cutoff } else { r -> r >= cutoff }
+        clip.reset()
+        for (r in 0 until dissolveRows) for (c in 0 until dissolveCols) {
+            if (showRank(dissolveRank[r * dissolveCols + c])) {
+                val x = scrollX + c * bw
+                clip.addRect(x, r * bh, x + bw + 0.5f, (r + 1) * bh + 0.5f, android.graphics.Path.Direction.CW)
+            }
+        }
+        canvas.save()
+        canvas.clipPath(clip)
+        val drawn = super.drawChild(canvas, child, drawingTime)
+        canvas.restore()
+        return drawn
+    }
+
 
     fun page(i: Int): CellLayout? = getChildAt(i) as? CellLayout
 
@@ -389,10 +466,20 @@ class Workspace(context: Context) : ViewGroup(context) {
 /** The fixed row at the bottom. One slot per column, no labels. */
 class DockView(context: Context) : ViewGroup(context) {
     var slots = 5
-    val panel = PanelDrawable(context, withAlpha(Pixel.PANEL, 200), withAlpha(Pixel.MUTED, 120))
+    val look = DockDrawable(context, "panel")
+
+    /** Dock style (see DockStyles.ALL). */
+    var style: String
+        get() = look.style
+        set(v) { look.style = v; invalidate() }
+
+    /** Lit in the accent while something is dragged over it. */
+    var highlight: Boolean
+        get() = look.highlight
+        set(v) { look.highlight = v; invalidate() }
 
     init {
-        background = panel
+        background = look
         val p = Pixel.dpi(context, 6)
         setPadding(p, p, p + Pixel.dpi(context, 2), p + Pixel.dpi(context, 2))
     }

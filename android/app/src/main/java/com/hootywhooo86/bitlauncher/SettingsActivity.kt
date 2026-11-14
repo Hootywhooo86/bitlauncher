@@ -98,6 +98,16 @@ class SettingsActivity : Activity() {
             ))
         }
 
+        section("ANIMATED ICONS")
+        body.addView(note("A little hop now and then. Never while the phone saves power or animations are off."))
+        for ((key, name) in IconMotion.ALL) body.addView(choice(name.uppercase(), prefs.iconMotion == key) { changed { prefs.iconMotion = key } }.full())
+
+        section("PAGE TRANSITION")
+        for ((key, name) in PageTransitions.ALL) body.addView(choice(name.uppercase(), prefs.pageTransition == key) { changed { prefs.pageTransition = key } }.full())
+
+        section("DOCK")
+        for ((key, name) in DockStyles.ALL) body.addView(choice(name.uppercase(), prefs.dockStyle == key) { changed { prefs.dockStyle = key } }.full())
+
         section("ICON SIZE")
         row(listOf("SMALL", "MEDIUM", "LARGE").mapIndexed { i, label ->
             choice(label, prefs.iconSize == i) { changed { prefs.iconSize = i } }

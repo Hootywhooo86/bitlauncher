@@ -196,6 +196,21 @@ class Prefs(context: Context) {
         get() = sp.getInt("iconTile", 0)
         set(v) = sp.edit().putInt("iconTile", v).apply()
 
+    /** Dock style (see DockStyles.ALL). */
+    var dockStyle: String
+        get() = sp.getString("dockStyle", "panel")!!
+        set(v) = sp.edit().putString("dockStyle", v).apply()
+
+    /** How home pages change (see PageTransitions.ALL). */
+    var pageTransition: String
+        get() = sp.getString("pageTransition", "slide")!!
+        set(v) = sp.edit().putString("pageTransition", v).apply()
+
+    /** Animated icons (see IconMotion.ALL). Off until chosen. */
+    var iconMotion: String
+        get() = sp.getString("iconMotion", "off")!!
+        set(v) = sp.edit().putString("iconMotion", v).apply()
+
     /** How app icons look (see IconStyles.ALL). */
     var iconStyle: String
         get() = sp.getString("iconStyle", "sprite")!!
@@ -254,6 +269,9 @@ class Prefs(context: Context) {
         .put("lockWallpaper", lockWallpaper)
         .put("clockFont", clockFont)
         .put("iconStyle", iconStyle)
+        .put("dockStyle", dockStyle)
+        .put("pageTransition", pageTransition)
+        .put("iconMotion", iconMotion)
         .put("lockAccent", lockAccent)
         .put("iconTile", iconTile)
         .put("customTheme", JSONObject().apply {
@@ -289,6 +307,9 @@ class Prefs(context: Context) {
         lockWallpaper = o.optBoolean("lockWallpaper", lockWallpaper)
         clockFont = o.optString("clockFont", clockFont)
         iconStyle = o.optString("iconStyle", iconStyle)
+        dockStyle = o.optString("dockStyle", dockStyle)
+        pageTransition = o.optString("pageTransition", pageTransition)
+        iconMotion = o.optString("iconMotion", iconMotion)
         lockAccent = o.optInt("lockAccent", lockAccent)
         iconTile = o.optInt("iconTile", iconTile)
         o.optJSONObject("customTheme")?.let { c -> for (r in c.keys()) setCustomColor(r, c.getInt(r)) }

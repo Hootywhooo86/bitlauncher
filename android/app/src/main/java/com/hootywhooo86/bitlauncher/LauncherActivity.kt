@@ -376,6 +376,9 @@ class LauncherActivity : Activity() {
 
     /** Size the dock and pad the pages around the system bars. */
     private fun positionChrome() {
+        dock.style = prefs.dockStyle
+        dock.look.accent = prefs.accent
+        workspace.transition = prefs.pageTransition
         val gap = Pixel.dpi(this, 8)
         val screenW = resources.displayMetrics.widthPixels
         val panes = panesFor(resources.configuration)
@@ -453,6 +456,21 @@ class LauncherActivity : Activity() {
 
     /** The theme and its colours: a custom theme's colours changing counts as a new theme. */
     private fun themeSignature(): String = Pixel.themeFor(prefs, prefs.theme).let { "${it.key}|${it.bg}|${it.panel}|${it.ink}|${it.muted}" }
+
+    /** The app opened most recently from home, for the "app you used last" animation. */
+    private var lastUsed: AppKey? = null
+
+    private fun wiggleFor(key: AppKey): Int = when (prefs.iconMotion) {
+        "all" -> 2
+        "last" -> if (key == (lastUsed ?: usage.recent().firstOrNull().also { lastUsed = it })) 1 else 0
+        else -> 0
+    }
+
+    /** After a launch, the hop moves to the app just used. */
+    private fun updateWiggles(v: View) {
+        if (v is AppIconView) (v.tagItem as? AppKey)?.let { v.wiggle = wiggleFor(it) }
+        if (v is ViewGroup) for (i in 0 until v.childCount) updateWiggles(v.getChildAt(i))
+    }
 
     /** Icons drawn somewhere home doesn't rebuild (the drawer) pick up a new look. */
     private fun redrawIcons(v: View) {
@@ -621,6 +639,7 @@ class LauncherActivity : Activity() {
     ) {
         view.tagItem = key
         view.sprite = icons.get(key)
+        view.wiggle = wiggleFor(key)
         view.isNew = isNewApp(key)
         view.folderSprites = null
         view.hasDot = false
@@ -756,14 +775,14 @@ class LauncherActivity : Activity() {
             ActivityOptions.makeScaleUpAnimation(v, r.left, r.top, r.width(), r.height()).toBundle()
         }
         if (PinnedShortcuts.isShortcut(key)) {
-            if (PinnedShortcuts.launch(this, key, bounds, opts)) usage.record(key)
+            if (PinnedShortcuts.launch(this, key, bounds, opts)) usage.record(key).also { lastUsed = key; updateWiggles(root) }
             else Pixel.say(this, "${apps.label(key)} no longer works; its app removed it. Hold it to remove it.")
             return
         }
         try {
             val user = apps.userFor(key) ?: throw IllegalStateException()
             apps.launcher.startMainActivity(apps.component(key), user, bounds, opts)
-            usage.record(key)
+            usage.record(key).also { lastUsed = key; updateWiggles(root) }
         } catch (e: Exception) {
             Pixel.say(this, "${apps.label(key)} can't be opened. It may have been uninstalled or disabled.")
         }
@@ -1938,13 +1957,13 @@ class LauncherActivity : Activity() {
                 page.clearDropHint()
             }
         }
-        dock.panel.border = if (target is DropTarget.Dock) accent else withAlpha(Pixel.MUTED, 120)
+        dock.highlight = target is DropTarget.Dock
         dock.invalidate()
     }
 
     private fun clearTargets() {
         for (i in 0 until workspace.pageCount) workspace.page(i)?.clearDropHint()
-        dock.panel.border = withAlpha(Pixel.MUTED, 120)
+        dock.highlight = false
         dock.invalidate()
     }
 

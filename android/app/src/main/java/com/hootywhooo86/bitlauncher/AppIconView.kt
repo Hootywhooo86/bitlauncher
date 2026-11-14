@@ -52,6 +52,36 @@ class AppIconView(context: Context) : View(context) {
     private fun updateChannelSurfing() {
         removeCallbacks(surf)
         if (folderStyle == "tv" && isAttachedToWindow && windowVisibility == VISIBLE && Pixel.motion(context)) postDelayed(surf, 2500)
+        updateWiggle()
+    }
+
+    /** Idle motion: 0 none, 1 a little hop every few seconds, 2 one now and then. */
+    var wiggle = 0
+        set(v) { if (field != v) { field = v; updateWiggle() } }
+
+    private val hop = object : Runnable {
+        override fun run() {
+            val r = iconRect()
+            pivotX = r.exactCenterX()
+            pivotY = r.bottom.toFloat()
+            val up = -r.width() / IconCache.SIZE * 3f // three sprite-pixels
+            animate().translationY(up).rotation(-4f).setDuration(140).setInterpolator(Ease.move).withEndAction {
+                animate().translationY(0f).rotation(0f).setDuration(260)
+                    .setInterpolator(android.view.animation.OvershootInterpolator(2.5f)).start()
+            }.start()
+            scheduleHop()
+        }
+    }
+
+    private fun scheduleHop() {
+        val delay = if (wiggle == 1) 4500L + kotlin.random.Random.nextLong(1500) else 12_000L + kotlin.random.Random.nextLong(20_000)
+        postDelayed(hop, delay)
+    }
+
+    private fun updateWiggle() {
+        removeCallbacks(hop)
+        val saving = context.getSystemService(android.os.PowerManager::class.java)?.isPowerSaveMode == true
+        if (wiggle > 0 && !saving && isAttachedToWindow && windowVisibility == VISIBLE && Pixel.motion(context)) scheduleHop()
     }
 
     override fun onAttachedToWindow() {
@@ -62,6 +92,7 @@ class AppIconView(context: Context) : View(context) {
     override fun onDetachedFromWindow() {
         super.onDetachedFromWindow()
         removeCallbacks(surf)
+        removeCallbacks(hop)
     }
 
     override fun onWindowVisibilityChanged(visibility: Int) {
