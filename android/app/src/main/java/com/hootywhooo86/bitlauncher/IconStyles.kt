@@ -28,6 +28,10 @@ object IconStyles {
     @Volatile
     var accent = Pixel.ACCENTS[0]
 
+    /** One colour for every tile, or 0 to take each icon's own. */
+    @Volatile
+    var tile = 0
+
     private const val S = IconCache.SIZE
     private val cache = WeakHashMap<Bitmap, Pair<String, Bitmap>>()
 
@@ -35,9 +39,9 @@ object IconStyles {
     fun styled(sprite: Bitmap): Bitmap {
         val look = current
         if (look == "sprite") return sprite
-        val key = "$look|$accent|${Pixel.INK}|${Pixel.BG}"
+        val key = "$look|$accent|$tile|${Pixel.INK}|${Pixel.BG}"
         synchronized(cache) { cache[sprite]?.let { if (it.first == key) return it.second } }
-        val out = Bitmap.createBitmap(render(pixels(sprite), look, accent), S, S, Bitmap.Config.ARGB_8888)
+        val out = Bitmap.createBitmap(render(pixels(sprite), look, accent, tile), S, S, Bitmap.Config.ARGB_8888)
         synchronized(cache) { cache[sprite] = key to out }
         return out
     }
@@ -48,12 +52,12 @@ object IconStyles {
     }
 
     /** The pixel maths, on plain arrays so it can be tested. */
-    fun render(sprite: IntArray, look: String, accent: Int): IntArray = when (look) {
+    fun render(sprite: IntArray, look: String, accent: Int, tile: Int = 0): IntArray = when (look) {
         "mono" -> tint(sprite, Pixel.INK)
         "accent" -> tint(sprite, accent)
-        "block" -> block(sprite)
-        "coin" -> coin(sprite)
-        "cartridge" -> cartridge(sprite)
+        "block" -> block(sprite, tile)
+        "coin" -> coin(sprite, tile)
+        "cartridge" -> cartridge(sprite, tile)
         "framed" -> framed(sprite)
         else -> sprite.copyOf()
     }
@@ -126,9 +130,12 @@ object IconStyles {
     }
 
     /** A bevelled tile in the icon's own colour, notched corners, the sprite on top. */
-    private fun block(sprite: IntArray): IntArray {
+    /** The tile colour: the one picked, or the icon's own, darkened. */
+    private fun base(sprite: IntArray, picked: Int) = if (picked != 0) picked else blend(average(sprite), Pixel.BG, 0.45f)
+
+    private fun block(sprite: IntArray, picked: Int): IntArray {
         val out = IntArray(S * S)
-        val tile = blend(average(sprite), Pixel.BG, 0.45f)
+        val tile = base(sprite, picked)
         rect(out, 1, 0, 30, 31, Pixel.SHADOW)
         rect(out, 0, 1, 31, 30, Pixel.SHADOW)
         rect(out, 2, 1, 29, 30, tile)
@@ -142,9 +149,9 @@ object IconStyles {
     }
 
     /** A round coin: rim, a shine at the top left, the sprite stamped in the middle. */
-    private fun coin(sprite: IntArray): IntArray {
+    private fun coin(sprite: IntArray, picked: Int): IntArray {
         val out = IntArray(S * S)
-        val face = blend(average(sprite), Pixel.BG, 0.4f)
+        val face = base(sprite, picked)
         val rim = blend(face, Color.BLACK, 0.35f)
         val c = 15.5f
         for (y in 0 until S) for (x in 0 until S) {
@@ -161,9 +168,9 @@ object IconStyles {
     }
 
     /** A game cartridge: grey shell, grip ridges at the top, the sprite on a label. */
-    private fun cartridge(sprite: IntArray): IntArray {
+    private fun cartridge(sprite: IntArray, picked: Int): IntArray {
         val out = IntArray(S * S)
-        val shell = blend(Pixel.MUTED, Pixel.INK, 0.2f)
+        val shell = if (picked != 0) picked else blend(Pixel.MUTED, Pixel.INK, 0.2f)
         val dark = blend(shell, Color.BLACK, 0.35f)
         val label = blend(average(sprite), Color.WHITE, 0.45f)
         rect(out, 3, 0, 28, 31, Pixel.SHADOW)

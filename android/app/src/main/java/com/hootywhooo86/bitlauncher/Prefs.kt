@@ -184,6 +184,18 @@ class Prefs(context: Context) {
 
     fun setCustomColor(role: String, color: Int) = sp.edit().putInt("custom_$role", color).apply()
 
+    /** The lock screen's own accent, or 0 to use the home accent. */
+    var lockAccent: Int
+        get() = sp.getInt("lockAccent", 0)
+        set(v) = sp.edit().putInt("lockAccent", v).apply()
+
+    val lockAccentOrHome: Int get() = lockAccent.takeIf { it != 0 } ?: accent
+
+    /** One colour for every icon tile (blocks, coins, cartridges), or 0 for each app's own. */
+    var iconTile: Int
+        get() = sp.getInt("iconTile", 0)
+        set(v) = sp.edit().putInt("iconTile", v).apply()
+
     /** How app icons look (see IconStyles.ALL). */
     var iconStyle: String
         get() = sp.getString("iconStyle", "sprite")!!
@@ -242,6 +254,8 @@ class Prefs(context: Context) {
         .put("lockWallpaper", lockWallpaper)
         .put("clockFont", clockFont)
         .put("iconStyle", iconStyle)
+        .put("lockAccent", lockAccent)
+        .put("iconTile", iconTile)
         .put("customTheme", JSONObject().apply {
             for (r in listOf("bg", "panel", "ink", "muted")) if (sp.contains("custom_$r")) put(r, sp.getInt("custom_$r", 0))
         })
@@ -275,6 +289,8 @@ class Prefs(context: Context) {
         lockWallpaper = o.optBoolean("lockWallpaper", lockWallpaper)
         clockFont = o.optString("clockFont", clockFont)
         iconStyle = o.optString("iconStyle", iconStyle)
+        lockAccent = o.optInt("lockAccent", lockAccent)
+        iconTile = o.optInt("iconTile", iconTile)
         o.optJSONObject("customTheme")?.let { c -> for (r in c.keys()) setCustomColor(r, c.getInt(r)) }
         swipeDown = o.optString("swipeDown", swipeDown)
         popups = o.optString("popups", popups)

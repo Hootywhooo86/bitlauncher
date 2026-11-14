@@ -16,7 +16,7 @@ android {
         targetSdk = 35
         // CI passes -PversionName/-PversionCode; this line is the source of truth for releases.
         versionCode = (project.findProperty("versionCode") as String?)?.toInt() ?: 100
-        versionName = (project.findProperty("versionName") as String?) ?: "0.12.0"
+        versionName = (project.findProperty("versionName") as String?) ?: "0.13.0"
     }
 
     signingConfigs {

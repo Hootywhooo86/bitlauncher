@@ -7,10 +7,11 @@ import org.json.JSONObject
 enum class GridSize(val cols: Int, val rows: Int, val key: String) {
     SMALL(4, 5, "4x5"),
     MEDIUM(5, 6, "5x6"),
-    LARGE(6, 7, "6x7");
+    LARGE(6, 7, "6x7"),
+    HUGE(7, 9, "7x9");
 
-    /** The dock has one slot per column, up to six. */
-    val dockSlots: Int get() = minOf(cols, 6)
+    /** The dock has one slot per column, up to seven. */
+    val dockSlots: Int get() = minOf(cols, 7)
 
     companion object {
         fun fromKey(key: String?): GridSize = entries.firstOrNull { it.key == key } ?: MEDIUM

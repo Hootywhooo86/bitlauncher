@@ -15,7 +15,8 @@ class LayoutTest {
 
     @Test
     fun gridSizesAreTheThreeWeShip() {
-        assertEquals(listOf("4x5", "5x6", "6x7"), GridSize.entries.map { it.key })
+        assertEquals(listOf("4x5", "5x6", "6x7", "7x9"), GridSize.entries.map { it.key })
+        assertEquals(7, GridSize.HUGE.dockSlots)
         assertEquals(GridSize.MEDIUM, GridSize.fromKey("nonsense"))
         assertEquals(4, GridSize.SMALL.dockSlots)
         assertEquals(6, GridSize.LARGE.dockSlots)

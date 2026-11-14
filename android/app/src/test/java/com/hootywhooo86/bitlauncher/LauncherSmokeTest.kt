@@ -53,10 +53,30 @@ class LauncherSmokeTest {
     }
 
     @Test
+    fun sevenByNineFitsAndKeepsEverything() {
+        val controller = Robolectric.buildActivity(LauncherActivity::class.java).setup()
+        idle()
+        val prefs = Prefs(controller.get())
+        prefs.grid = GridSize.HUGE
+        prefs.touch()
+        controller.pause().resume()
+        idle()
+        val page = findWorkspace(controller.get().window.decorView)!!.page(0)!!
+        assertEquals(7, page.cols)
+        assertEquals(9, page.rows)
+        // And back down without trouble.
+        prefs.grid = GridSize.MEDIUM
+        prefs.touch()
+        controller.pause().resume()
+        idle()
+        assertEquals(5, findWorkspace(controller.get().window.decorView)!!.page(0)!!.cols)
+    }
+
+    @Test
     fun settingsRendersEveryGridSize() {
         val activity = Robolectric.buildActivity(SettingsActivity::class.java).setup().get()
         val root = activity.window.decorView
-        for (label in listOf("4 x 5", "5 x 6", "6 x 7")) assertTrue(label, hasVisibleText(root, label))
+        for (label in listOf("4 x 5", "5 x 6", "6 x 7", "7 x 9")) assertTrue(label, hasVisibleText(root, label))
         assertTrue(hasVisibleText(root, "Free, always."))
     }
 

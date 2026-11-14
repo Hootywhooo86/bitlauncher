@@ -91,6 +91,7 @@ class LauncherActivity : Activity() {
         prefs.firstSeen // the first run is remembered from now on
         IconStyles.current = prefs.iconStyle
         IconStyles.accent = prefs.accent
+        IconStyles.tile = prefs.iconTile
         appliedTheme = themeSignature()
         appliedPack = prefs.iconPack
         icons = IconCache(this)
@@ -439,6 +440,7 @@ class LauncherActivity : Activity() {
         refreshDots()
         IconStyles.current = prefs.iconStyle
         IconStyles.accent = prefs.accent
+        IconStyles.tile = prefs.iconTile
         redrawIcons(drawer)
         menu = PixelMenu(this, prefs.accent)
         if (layout.grid != prefs.grid) {

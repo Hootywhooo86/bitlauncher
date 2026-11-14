@@ -86,6 +86,17 @@ class SettingsActivity : Activity() {
         for ((key, name) in IconStyles.ALL) {
             body.addView(choice(name.uppercase(), prefs.iconStyle == key) { changed { prefs.iconStyle = key } }.full())
         }
+        if (prefs.iconStyle in setOf("block", "coin", "cartridge")) {
+            body.addView(Pixel.label(this, if (prefs.iconStyle == "cartridge") "CARTRIDGE COLOUR" else "TILE COLOUR", 9f, Pixel.MUTED).apply {
+                setPadding(0, Pixel.dpi(context, 10), 0, Pixel.dpi(context, 6))
+            })
+            row(listOf(
+                choice("EACH APP'S OWN", prefs.iconTile == 0) { changed { prefs.iconTile = 0 } },
+                choice(if (prefs.iconTile != 0) "MINE  ${Colors.hex(prefs.iconTile)}" else "PICK ONE", prefs.iconTile != 0) {
+                    PixelColorPicker(this, "Tile colour", prefs.iconTile.takeIf { it != 0 } ?: Pixel.PANEL) { c -> changed { prefs.iconTile = c } }.show()
+                },
+            ))
+        }
 
         section("ICON SIZE")
         row(listOf("SMALL", "MEDIUM", "LARGE").mapIndexed { i, label ->
@@ -407,6 +418,13 @@ class SettingsActivity : Activity() {
                 body.addView(choice(look.name.uppercase(), prefs.lockStyle == look.key) { changed { prefs.lockStyle = look.key } }.full())
             }
             body.addView(note((LockLooks.ALL.firstOrNull { it.key == prefs.lockStyle } ?: LockLooks.ALL[0]).about + " PREVIEW below shows it."))
+            body.addView(Pixel.label(this, "LOCK SCREEN COLOUR", 9f, Pixel.MUTED).apply { setPadding(0, Pixel.dpi(context, 12), 0, Pixel.dpi(context, 6)) })
+            row(listOf(
+                choice("SAME AS HOME", prefs.lockAccent == 0) { changed { prefs.lockAccent = 0 } },
+                choice(if (prefs.lockAccent != 0) "MINE  ${Colors.hex(prefs.lockAccent)}" else "PICK ONE", prefs.lockAccent != 0) {
+                    PixelColorPicker(this, "Lock screen colour", prefs.lockAccentOrHome) { c -> changed { prefs.lockAccent = c } }.show()
+                },
+            ))
             body.addView(Pixel.label(this, "CLOCK FONT", 9f, Pixel.MUTED).apply { setPadding(0, Pixel.dpi(context, 12), 0, Pixel.dpi(context, 6)) })
             for ((key, name) in ClockFonts.ALL) {
                 body.addView(choice(name.uppercase(), prefs.clockFont == key) { changed { prefs.clockFont = key } }.full())
@@ -480,6 +498,7 @@ class SettingsActivity : Activity() {
     private fun iconPreview(): View {
         IconStyles.current = prefs.iconStyle
         IconStyles.accent = prefs.accent
+        IconStyles.tile = prefs.iconTile
         val icons = IconCache(this)
         val users = getSystemService(android.os.UserManager::class.java)
         val me = android.os.Process.myUserHandle()

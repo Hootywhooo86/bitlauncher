@@ -213,6 +213,9 @@ class IconStylesTest {
         // Mono keeps no trace of the icon's own colour.
         assertTrue(IconStyles.render(red, "mono", 0).none { it == 0xFFE04040.toInt() })
         // Shaped looks fill their corners differently: the coin is round, the block is not.
+        // A picked tile colour replaces the icon's own.
+        val picked = IconStyles.render(red, "block", 0, 0xFF22AA44.toInt())
+        assertEquals(0xFF22AA44.toInt(), picked[16 * 32 + 3])
         val coin = IconStyles.render(red, "coin", 0)
         val block = IconStyles.render(red, "block", 0)
         assertEquals(0, coin[0])

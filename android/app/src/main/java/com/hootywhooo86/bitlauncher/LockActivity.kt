@@ -272,7 +272,7 @@ class LockScreen(base: Context, private val host: LockHost) : android.content.Co
     private val look get() = prefs.lockStyle
 
     private fun build(): View {
-        val accent = prefs.accent
+        val accent = prefs.lockAccentOrHome
         val look = look
         val root = SwipeUpFrame(this) { unlock(null) }
         root.setBackgroundColor(Pixel.BG)
@@ -281,7 +281,7 @@ class LockScreen(base: Context, private val host: LockHost) : android.content.Co
             val cached = if (prefs.weather) WeatherClient(this).cached() else null
             root.addView(SceneView(this).apply {
                 scene = prefs.scene
-                this.accent = prefs.accent
+                this.accent = prefs.lockAccentOrHome
                 timeOfDay = prefs.sceneTime
                 sunrise = cached?.sunrise
                 sunset = cached?.sunset
@@ -483,7 +483,7 @@ class LockScreen(base: Context, private val host: LockHost) : android.content.Co
         ticketBox.removeAllViews()
         val t = Tickets.next(this)
         ticketBox.visibility = if (t == null) View.GONE else View.VISIBLE
-        if (t != null) ticketBox.addView(TicketView.make(this, t, prefs.accent), FrameLayout.LayoutParams(-1, -2))
+        if (t != null) ticketBox.addView(TicketView.make(this, t, prefs.lockAccentOrHome), FrameLayout.LayoutParams(-1, -2))
     }
 
     private var float: android.animation.ValueAnimator? = null
@@ -506,7 +506,7 @@ class LockScreen(base: Context, private val host: LockHost) : android.content.Co
         list.removeAllViews()
         if (!NotificationHub.hasAccess(this)) return // the lock screen still shows the clock
         val lines = NotePrivacy.lockLines(NotificationHub.snapshot(), prefs.lockDetail, NotificationHub.systemHidesSensitive(this))
-        val accent = prefs.accent
+        val accent = prefs.lockAccentOrHome
         if (look == "minimal" && !minimalOpen) {
             LockLooks.summary(lines) { NoteCards.appName(this, it) }?.let {
                 list.addView(Pixel.label(this, it, 10f, Pixel.INK).apply {
@@ -828,7 +828,7 @@ class LockScreen(base: Context, private val host: LockHost) : android.content.Co
 
     private fun renderMedia() {
         mediaBox.removeAllViews()
-        media.current()?.let { mediaBox.addView(TodayCards.media(this, prefs.accent, it)) }
+        media.current()?.let { mediaBox.addView(TodayCards.media(this, prefs.lockAccentOrHome, it)) }
     }
 
     /** Unlocked: break apart block by block to reveal what's underneath, then go. */

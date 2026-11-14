@@ -8,7 +8,7 @@ online unless you turn on weather.
 
 | | |
 | --- | --- |
-| **Home grid** | Pages of apps, folders and widgets. Three sizes: **4x5, 5x6, 6x7** (Settings). Switching size never loses anything: what doesn't fit moves to the next free spot, or a new page. |
+| **Home grid** | Pages of apps, folders and widgets. Three sizes: **4x5, 5x6, 6x7, 7x9** (Settings). Switching size never loses anything: what doesn't fit moves to the next free spot, or a new page. |
 | **Foldables** | Unfolded (a Pixel Fold's inner screen, or any wide screen), home shows two pages side by side like the Pixel launcher, and swipes move both. Clock and dock size to a page and the dock sits centred; the drawer gets more columns; the lock screen keeps a readable width. Folding or unfolding re-lays out instantly with nothing lost. |
 | **Dock** | One slot per column (up to 6), holding apps or folders. Drop an app on a dock app to make a folder there, on a dock folder to add it, or on an empty slot to place it. An app from a folder dropped on a dock app trades places with it. Drag within the dock to swap. On first run it holds the phone's own dialer, messages, browser and camera. |
 | **App drawer** | Swipe up. Every app A–Z, search on top. The keyboard's Go opens the first match. Swipe down at the top to close. |
