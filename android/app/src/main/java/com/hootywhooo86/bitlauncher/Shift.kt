@@ -109,7 +109,7 @@ object FamilyTheme {
     fun extras(prefs: Prefs) = android.os.Bundle().apply {
         putInt("accent", prefs.accent)
         putString("theme", prefs.theme)
-        val t = Pixel.THEMES.firstOrNull { it.key == prefs.theme } ?: Pixel.THEMES[0]
+        val t = Pixel.themeFor(prefs, prefs.theme)
         putInt("background", t.bg)
         putInt("panel", t.panel)
         putInt("ink", t.ink)

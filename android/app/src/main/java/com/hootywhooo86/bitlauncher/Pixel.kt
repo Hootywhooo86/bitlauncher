@@ -37,9 +37,20 @@ object Pixel {
 
     /** Pick up the saved theme; screens call this when they start. */
     fun load(context: Context) {
-        val key = Prefs(context).theme
-        theme = THEMES.firstOrNull { it.key == key } ?: THEMES[0]
+        val prefs = Prefs(context)
+        val key = prefs.theme
+        theme = if (key == "custom") custom(prefs) else THEMES.firstOrNull { it.key == key } ?: THEMES[0]
     }
+
+    /** The user's own theme, from their four colours; starts as a copy of the default. */
+    fun custom(prefs: Prefs): PixelTheme {
+        val d = THEMES[0]
+        return PixelTheme("custom", "My theme", prefs.customColor("bg", d.bg), prefs.customColor("panel", d.panel),
+            prefs.customColor("ink", d.ink), prefs.customColor("muted", d.muted))
+    }
+
+    /** The theme for [key], the custom one included. */
+    fun themeFor(prefs: Prefs, key: String): PixelTheme = if (key == "custom") custom(prefs) else THEMES.firstOrNull { it.key == key } ?: THEMES[0]
 
     val BG: Int get() = theme.bg
     val PANEL: Int get() = theme.panel

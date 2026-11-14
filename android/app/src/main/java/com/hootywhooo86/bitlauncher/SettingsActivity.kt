@@ -107,6 +107,17 @@ class SettingsActivity : Activity() {
                 setOnClickListener { changed { prefs.accent = color } }
             }
         })
+        val ownAccent = accent !in Pixel.ACCENTS
+        body.addView(LinearLayout(this).apply {
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding(0, Pixel.dpi(context, 8), 0, 0)
+            if (ownAccent) addView(View(context).apply {
+                background = PanelDrawable(context, accent, Pixel.INK)
+            }, LinearLayout.LayoutParams(Pixel.dpi(context, 40), Pixel.dpi(context, 40)).apply { rightMargin = Pixel.dpi(context, 8) })
+            addView(Pixel.button(context, if (ownAccent) "YOUR COLOUR  ${Colors.hex(accent)}" else "PICK ANY COLOUR", accent) {
+                PixelColorPicker(context, "Accent colour", accent) { c -> changed { prefs.accent = c } }.show()
+            }, LinearLayout.LayoutParams(0, -2, 1f))
+        }, LinearLayout.LayoutParams(-1, -2))
 
         section("THEME")
         body.addView(note("Recolours panels and text everywhere. All free."))
@@ -134,6 +145,7 @@ class SettingsActivity : Activity() {
                 if (prefs.theme == t.key) addView(Pixel.label(context, "ON", 10f, accent))
             }, LinearLayout.LayoutParams(-1, -2).apply { bottomMargin = Pixel.dpi(this@SettingsActivity, 6) })
         }
+        customThemeSection(accent)
 
         section("SCENE")
         body.addView(note("A pixel landscape behind your home screen. It slides as you swipe and follows the time of day."))
@@ -418,6 +430,50 @@ class SettingsActivity : Activity() {
                 startActivity(Intent(this, LockActivity::class.java))
             }.full())
         }
+    }
+
+    /** Your own theme: tap a colour to change it, then USE MY THEME. */
+    private fun customThemeSection(accent: Int) {
+        val mine = Pixel.custom(prefs)
+        val using = prefs.theme == "custom"
+        body.addView(Pixel.label(this, "MY THEME", 9f, Pixel.MUTED).apply { setPadding(0, Pixel.dpi(context, 10), 0, Pixel.dpi(context, 6)) })
+        val roles = listOf(Triple("bg", "BACKGROUND", mine.bg), Triple("panel", "PANELS", mine.panel), Triple("ink", "TEXT", mine.ink), Triple("muted", "QUIET TEXT", mine.muted))
+        for ((role, label, c) in roles) body.addView(LinearLayout(this).apply {
+            gravity = Gravity.CENTER_VERTICAL
+            background = PanelDrawable(context, Pixel.PANEL, Pixel.MUTED)
+            val p = Pixel.dpi(context, 10)
+            setPadding(p, p, p + Pixel.dpi(context, 2), p + Pixel.dpi(context, 2))
+            isClickable = true
+            setOnClickListener {
+                PixelColorPicker(context, label.lowercase().replaceFirstChar { it.uppercase() }, c) { picked ->
+                    // Keep the other three as they are now, so a first edit starts from the default.
+                    for ((r, _, cur) in roles) if (r != role) prefs.setCustomColor(r, cur)
+                    prefs.setCustomColor(role, picked)
+                    prefs.touch()
+                    if (prefs.theme == "custom") {
+                        Pixel.load(context)
+                        FamilyTheme.broadcast(context)
+                        recreate()
+                    } else render()
+                }.show()
+            }
+            addView(View(context).apply { background = PanelDrawable(context, c, Pixel.SHADOW, shadow = false) },
+                LinearLayout.LayoutParams(Pixel.dpi(context, 24), Pixel.dpi(context, 24)).apply { rightMargin = Pixel.dpi(context, 10) })
+            addView(Pixel.label(context, label, 10f, Pixel.INK), LinearLayout.LayoutParams(0, -2, 1f))
+            addView(Pixel.label(context, Colors.hex(c), 9f, Pixel.MUTED))
+        }, LinearLayout.LayoutParams(-1, -2).apply { bottomMargin = Pixel.dpi(this@SettingsActivity, 6) })
+        // Say so plainly if text would be hard to read.
+        if (Colors.contrast(mine.ink, mine.bg) < 4.5 || Colors.contrast(mine.ink, mine.panel) < 4.5) {
+            body.addView(note("Text and background are close in brightness, so words may be hard to read. Make one lighter or darker."))
+        }
+        body.addView(Pixel.button(this, if (using) "USING MY THEME" else "USE MY THEME", accent) {
+            if (prefs.theme == "custom") return@button
+            prefs.theme = "custom"
+            prefs.touch()
+            Pixel.load(this)
+            FamilyTheme.broadcast(this)
+            recreate()
+        }.full())
     }
 
     /** Five of your own apps in the chosen look. */

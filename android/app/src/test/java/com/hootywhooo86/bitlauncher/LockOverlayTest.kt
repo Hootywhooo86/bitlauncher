@@ -240,3 +240,73 @@ class IconStylesTest {
         java.io.File(dir, "icon-styles.png").outputStream().use { sheet.compress(android.graphics.Bitmap.CompressFormat.PNG, 100, it) }
     }
 }
+
+@RunWith(RobolectricTestRunner::class)
+@Config(sdk = [35], qualifiers = "w411dp-h891dp-xxhdpi")
+@org.robolectric.annotation.GraphicsMode(org.robolectric.annotation.GraphicsMode.Mode.NATIVE)
+class ColorsTest {
+    @Test
+    fun hexRoundTripsAndRejectsJunk() {
+        assertEquals("#A78BFA", Colors.hex(0xFFA78BFA.toInt()))
+        assertEquals(0xFFA78BFA.toInt(), Colors.parse("#a78bfa"))
+        assertEquals(0xFFAABBCC.toInt(), Colors.parse("abc"))
+        assertEquals(null, Colors.parse("#12345"))
+        assertEquals(null, Colors.parse("zzzzzz"))
+    }
+
+    @Test
+    fun contrastMatchesTheStandard() {
+        assertEquals(21.0, Colors.contrast(0xFF000000.toInt(), 0xFFFFFFFF.toInt()), 0.01)
+        assertEquals(1.0, Colors.contrast(0xFF777777.toInt(), 0xFF777777.toInt()), 0.01)
+    }
+
+    @Test
+    fun customThemeIsUsedEverywhereAndBackedUp() {
+        val ctx = org.robolectric.RuntimeEnvironment.getApplication()
+        val prefs = Prefs(ctx)
+        prefs.setCustomColor("bg", 0xFF102030.toInt())
+        prefs.theme = "custom"
+        Pixel.load(ctx)
+        assertEquals(0xFF102030.toInt(), Pixel.BG)
+        // Unset roles start from the default theme.
+        assertEquals(Pixel.THEMES[0].ink, Pixel.INK)
+        val saved = prefs.toJson()
+        prefs.setCustomColor("bg", 0xFF000000.toInt())
+        prefs.restore(saved)
+        assertEquals(0xFF102030.toInt(), prefs.customColor("bg", 0))
+        assertEquals(0xFF102030.toInt(), FamilyTheme.extras(prefs).getInt("background"))
+        prefs.theme = "default"
+        Pixel.load(ctx)
+    }
+
+    @Test
+    fun pickerHandsBackWhatYouTyped() {
+        val activity = Robolectric.buildActivity(android.app.Activity::class.java).setup().get()
+        var picked = 0
+        val picker = PixelColorPicker(activity, "Accent", 0xFFA78BFA.toInt()) { picked = it }
+        picker.show()
+        fun find(v: View): android.widget.EditText? {
+            if (v is android.widget.EditText) return v
+            if (v is ViewGroup) for (i in 0 until v.childCount) find(v.getChildAt(i))?.let { return it }
+            return null
+        }
+        find(picker.window!!.decorView)!!.setText("#20C0A0")
+        System.getenv("SHOT_DIR")?.let { dir ->
+            val root = (picker.window!!.decorView as ViewGroup)
+            root.measure(View.MeasureSpec.makeMeasureSpec(1100, View.MeasureSpec.EXACTLY), View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED))
+            root.layout(0, 0, root.measuredWidth, root.measuredHeight)
+            val b = android.graphics.Bitmap.createBitmap(root.width.coerceAtLeast(1), root.height.coerceAtLeast(1), android.graphics.Bitmap.Config.ARGB_8888)
+            b.eraseColor(Pixel.BG)
+            root.draw(android.graphics.Canvas(b))
+            java.io.File(dir, "color-picker.png").outputStream().use { b.compress(android.graphics.Bitmap.CompressFormat.PNG, 100, it) }
+        }
+        assertEquals(0xFF20C0A0.toInt(), picker.current)
+        fun click(v: View, text: String): Boolean {
+            if (v is android.widget.TextView && v.text.toString() == text) return v.performClick()
+            if (v is ViewGroup) for (i in 0 until v.childCount) if (click(v.getChildAt(i), text)) return true
+            return false
+        }
+        assertTrue(click(picker.window!!.decorView, "USE"))
+        assertEquals(0xFF20C0A0.toInt(), picked)
+    }
+}

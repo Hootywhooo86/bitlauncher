@@ -91,7 +91,7 @@ class LauncherActivity : Activity() {
         prefs.firstSeen // the first run is remembered from now on
         IconStyles.current = prefs.iconStyle
         IconStyles.accent = prefs.accent
-        appliedTheme = prefs.theme
+        appliedTheme = themeSignature()
         appliedPack = prefs.iconPack
         icons = IconCache(this)
         usage = Usage(this)
@@ -426,7 +426,7 @@ class LauncherActivity : Activity() {
 
     private fun applyPrefs() {
         appliedPrefs = prefs.version
-        if (prefs.theme != appliedTheme) {
+        if (themeSignature() != appliedTheme) {
             // Every panel is coloured when it's made: simplest and surest to start fresh.
             Pixel.load(this)
             recreate()
@@ -448,6 +448,9 @@ class LauncherActivity : Activity() {
         positionChrome()
         rebuild()
     }
+
+    /** The theme and its colours: a custom theme's colours changing counts as a new theme. */
+    private fun themeSignature(): String = Pixel.themeFor(prefs, prefs.theme).let { "${it.key}|${it.bg}|${it.panel}|${it.ink}|${it.muted}" }
 
     /** Icons drawn somewhere home doesn't rebuild (the drawer) pick up a new look. */
     private fun redrawIcons(v: View) {

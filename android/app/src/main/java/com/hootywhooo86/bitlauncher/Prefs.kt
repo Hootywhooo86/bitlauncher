@@ -179,6 +179,11 @@ class Prefs(context: Context) {
         get() = sp.getString("popups", "home")!!
         set(v) = sp.edit().putString("popups", v).apply()
 
+    /** One colour of the custom theme ("bg", "panel", "ink", "muted"), or [fallback] if unset. */
+    fun customColor(role: String, fallback: Int): Int = sp.getInt("custom_$role", fallback)
+
+    fun setCustomColor(role: String, color: Int) = sp.edit().putInt("custom_$role", color).apply()
+
     /** How app icons look (see IconStyles.ALL). */
     var iconStyle: String
         get() = sp.getString("iconStyle", "sprite")!!
@@ -237,6 +242,9 @@ class Prefs(context: Context) {
         .put("lockWallpaper", lockWallpaper)
         .put("clockFont", clockFont)
         .put("iconStyle", iconStyle)
+        .put("customTheme", JSONObject().apply {
+            for (r in listOf("bg", "panel", "ink", "muted")) if (sp.contains("custom_$r")) put(r, sp.getInt("custom_$r", 0))
+        })
         .put("swipeDown", swipeDown)
         .put("popups", popups)
         .put("layoutLocked", layoutLocked)
@@ -267,6 +275,7 @@ class Prefs(context: Context) {
         lockWallpaper = o.optBoolean("lockWallpaper", lockWallpaper)
         clockFont = o.optString("clockFont", clockFont)
         iconStyle = o.optString("iconStyle", iconStyle)
+        o.optJSONObject("customTheme")?.let { c -> for (r in c.keys()) setCustomColor(r, c.getInt(r)) }
         swipeDown = o.optString("swipeDown", swipeDown)
         popups = o.optString("popups", popups)
         layoutLocked = o.optBoolean("layoutLocked", layoutLocked)
