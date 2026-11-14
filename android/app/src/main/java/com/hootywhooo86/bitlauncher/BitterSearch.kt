@@ -201,7 +201,7 @@ class BitterSearch(private val context: Context, private val done: () -> Unit) {
             }
     }
 
-    /** Search the web, in Bit Browser if it's installed, otherwise the phone's usual search. */
+    /** Search the web with the chosen engine; Bit Browser if chosen and installed. */
     private fun web(q: String): DrawerView.Answer {
         val bitBrowser = "com.pixelbrowser.app"
         val pm = context.packageManager
@@ -211,14 +211,24 @@ class BitterSearch(private val context: Context, private val done: () -> Unit) {
         } catch (e: Exception) {
             false
         }
-        return DrawerView.Answer("Search the web for \"$q\"", if (hasBit) "Bit Browser" else "Web") {
-            val url = Uri.parse("https://duckduckgo.com/?q=" + Uri.encode(q))
+        val engine = prefs.searchEngine
+        val useBit = engine == "bit" && hasBit
+        val label = when {
+            useBit -> "Bit Browser"
+            engine == "google" -> "Google"
+            engine == "duck" -> "DuckDuckGo"
+            else -> "Web"
+        }
+        return DrawerView.Answer("Search the web for \"$q\"", label) {
+            val url = Uri.parse(
+                if (engine == "google") "https://www.google.com/search?q=" + Uri.encode(q) else "https://duckduckgo.com/?q=" + Uri.encode(q),
+            )
             val tries = buildList {
-                if (hasBit) {
-                    add(Intent(Intent.ACTION_WEB_SEARCH).putExtra(android.app.SearchManager.QUERY, q).setPackage(bitBrowser))
+                if (useBit) {
                     add(Intent(Intent.ACTION_VIEW, url).setPackage(bitBrowser))
+                    add(Intent(Intent.ACTION_WEB_SEARCH).putExtra(android.app.SearchManager.QUERY, q).setPackage(bitBrowser))
                 }
-                add(Intent(Intent.ACTION_WEB_SEARCH).putExtra(android.app.SearchManager.QUERY, q))
+                if (engine == "bit") add(Intent(Intent.ACTION_WEB_SEARCH).putExtra(android.app.SearchManager.QUERY, q))
                 add(Intent(Intent.ACTION_VIEW, url))
             }
             val intent = tries.firstOrNull { it.resolveActivity(pm) != null }
@@ -290,15 +300,36 @@ class SearchActivity : Activity() {
             drawer.setBottomInset(bars.bottom)
             insets
         }
+        val searchMode = intent.getStringExtra(EXTRA_MODE) != "apps"
+        val view = if (searchMode) BitterSearchView(this, icons, { visibleApps(prefs) }, ::open, search) else null
+        if (view != null) {
+            root.removeView(drawer)
+            root.addView(view, 0, FrameLayout.LayoutParams(-1, -1))
+            root.setOnApplyWindowInsetsListener { _, insets ->
+                val bars = insets.getInsets(android.view.WindowInsets.Type.systemBars() or android.view.WindowInsets.Type.ime())
+                (title.layoutParams as FrameLayout.LayoutParams).topMargin = bars.top + Pixel.dpi(this, 12)
+                title.requestLayout()
+                view.setPadding(view.paddingLeft, bars.top + Pixel.dpi(this, 36), view.paddingRight, bars.bottom)
+                insets
+            }
+        }
         setContentView(root)
         apps = AppList(this, icons) {
-            val hidden = prefs.hidden
-            drawer.setApps(apps.apps.filter { it.key.id() !in hidden })
+            if (view != null) view.render() else drawer.setApps(visibleApps(prefs))
         }
         apps.start()
-        drawer.visibility = View.VISIBLE
-        drawer.reset()
-        if (intent.getStringExtra(EXTRA_MODE) != "apps") drawer.post { drawer.showKeyboard() }
+        if (view != null) {
+            view.post { view.showKeyboard() }
+        } else {
+            drawer.visibility = View.VISIBLE
+            drawer.reset()
+        }
+    }
+
+    private fun visibleApps(prefs: Prefs): List<AppEntry> {
+        if (!::apps.isInitialized) return emptyList()
+        val hidden = prefs.hidden
+        return apps.apps.filter { it.key.id() !in hidden }
     }
 
     private fun open(entry: AppEntry) {

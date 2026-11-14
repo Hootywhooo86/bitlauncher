@@ -159,8 +159,8 @@ class ScreenTexture(context: Context, grid: Boolean) : View(context) {
 }
 
 /** The RPG "more to read" arrow, breathing in and out. */
-class MoreArrow(context: Context, private val color: Int) : View(context) {
-    private val p = Paint().apply { this.color = color }
+class MoreArrow(context: Context, private val ink: Int) : View(context) {
+    private val p = Paint().apply { color = ink }
     private val u = Pixel.dp(context, 2f)
     private val pulse = ValueAnimator.ofFloat(1f, 0.25f).apply {
         duration = 600
@@ -187,8 +187,8 @@ class MoreArrow(context: Context, private val color: Int) : View(context) {
 }
 
 /** A text cursor: a solid block that fades in and out. */
-class BlinkBlock(context: Context, private val color: Int) : View(context) {
-    private val p = Paint().apply { this.color = color }
+class BlinkBlock(context: Context, private val ink: Int) : View(context) {
+    private val p = Paint().apply { color = ink }
     private val pulse = ValueAnimator.ofFloat(1f, 0f).apply {
         duration = 530
         repeatMode = ValueAnimator.REVERSE

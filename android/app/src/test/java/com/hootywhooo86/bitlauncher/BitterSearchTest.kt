@@ -100,3 +100,89 @@ class BitterSearchTest {
         }
     }
 }
+
+@RunWith(RobolectricTestRunner::class)
+@Config(sdk = [34], qualifiers = "w411dp-h891dp-xxhdpi")
+@GraphicsMode(GraphicsMode.Mode.NATIVE)
+class BitterSearchViewTest {
+    private val ctx get() = RuntimeEnvironment.getApplication()
+    private val fake = listOf("Files", "Keep Notes", "McDonald's", "Costco", "Settings", "Maps", "Messages", "Camera")
+        .mapIndexed { i, n -> AppEntry(AppKey("pkg$i", "Main", 0), n) }
+        .sortedBy { it.label.lowercase() } // the real list is A-Z
+
+    private fun view(): Pair<android.app.Activity, BitterSearchView> {
+        val activity = Robolectric.buildActivity(android.app.Activity::class.java).setup().get()
+        val v = BitterSearchView(activity, IconCache(activity), { fake }, {}, BitterSearch(activity) {})
+        activity.setContentView(v)
+        shadowOf(Looper.getMainLooper()).idle()
+        return activity to v
+    }
+
+    private fun texts(v: View, out: MutableList<String> = mutableListOf()): List<String> {
+        if (v is android.widget.TextView && v.isShown) out.add(v.text.toString())
+        if (v is ViewGroup) for (i in 0 until v.childCount) texts(v.getChildAt(i), out)
+        return out
+    }
+
+    @org.junit.Before
+    fun reset() {
+        SearchHistory.clear(ctx)
+        Prefs(ctx).apply { searchPosition = "top"; searchApps = 5; searchHistory = true; searchBar = "panel" }
+    }
+
+    @Test
+    fun appRowRanksMatchesAndRecentSearchesComeBack() {
+        val (_, v) = view()
+        assertEquals(listOf("Maps", "McDonald's", "Messages"), v.appsFor("m").map { it.label }.take(3))
+        assertEquals(listOf("Keep Notes"), v.appsFor("notes").map { it.label })
+        SearchHistory.add(ctx, "ups pickup")
+        SearchHistory.add(ctx, "turkeys near me")
+        SearchHistory.add(ctx, "UPS PICKUP") // the same search again moves to the top, once
+        assertEquals(listOf("UPS PICKUP", "turkeys near me"), SearchHistory.all(ctx))
+        v.render()
+        assertTrue(texts(v).containsAll(listOf("UPS PICKUP", "turkeys near me", "CLEAR RECENT SEARCHES")))
+        Prefs(ctx).searchHistory = false
+        SearchHistory.add(ctx, "secret")
+        assertFalse("off means nothing is kept", SearchHistory.all(ctx).contains("secret"))
+    }
+
+    @Test
+    fun barCanSitAtTheBottomByTheKeyboard() {
+        Prefs(ctx).searchPosition = "bottom"
+        val (_, v) = view()
+        // The box is the last thing, right above the keyboard.
+        val last = v.getChildAt(v.childCount - 1) as ViewGroup
+        fun hasField(x: View): Boolean = x === v.field || (x is ViewGroup && (0 until x.childCount).any { hasField(x.getChildAt(it)) })
+        assertTrue(hasField(last))
+    }
+
+    @Test
+    fun screenshotLikeTheGoogleSheet() {
+        for (q in listOf("tsn", "audiobookbay", "ign", "lacombe tattoo shops", "github login", "supabase")) SearchHistory.add(ctx, q)
+        val (activity, v) = view()
+        v.render()
+        shadowOf(Looper.getMainLooper()).idle()
+        System.getenv("SHOT_DIR")?.let { dir ->
+            val root = activity.window.decorView
+            val b = Bitmap.createBitmap(root.width, root.height, Bitmap.Config.ARGB_8888)
+            b.eraseColor(Pixel.BG)
+            root.draw(android.graphics.Canvas(b))
+            File(dir, "bitter-sheet.png").outputStream().use { b.compress(Bitmap.CompressFormat.PNG, 100, it) }
+        }
+        v.field.setText("ma")
+        shadowOf(Looper.getMainLooper()).idle()
+        fun icons(x: View, out: MutableList<AppIconView> = mutableListOf()): List<AppIconView> {
+            if (x is AppIconView) out.add(x)
+            if (x is ViewGroup) for (i in 0 until x.childCount) icons(x.getChildAt(i), out)
+            return out
+        }
+        assertEquals(listOf("Maps"), icons(v).map { it.label })
+        System.getenv("SHOT_DIR")?.let { dir ->
+            val root = activity.window.decorView
+            val b = Bitmap.createBitmap(root.width, root.height, Bitmap.Config.ARGB_8888)
+            b.eraseColor(Pixel.BG)
+            root.draw(android.graphics.Canvas(b))
+            File(dir, "bitter-typing.png").outputStream().use { b.compress(Bitmap.CompressFormat.PNG, 100, it) }
+        }
+    }
+}

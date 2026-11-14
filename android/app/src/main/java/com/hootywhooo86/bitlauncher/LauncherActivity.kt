@@ -64,6 +64,7 @@ class LauncherActivity : Activity() {
     private lateinit var dateLabel: TextView
     private val onNotifications = { refreshDots() }
     private lateinit var notePanel: NotificationPanel
+    private lateinit var homeSearch: HomeSearchBar
     private lateinit var popupLayer: FrameLayout
     private val onArrival: (Note) -> Unit = { showPopup(it) }
 
@@ -348,6 +349,9 @@ class LauncherActivity : Activity() {
         folderView.onClose = { closeFolder() }
         root.addView(folderView, FrameLayout.LayoutParams(-1, -1))
 
+        homeSearch = HomeSearchBar(this)
+        root.addView(homeSearch, FrameLayout.LayoutParams(-1, Pixel.dpi(this, 48), Gravity.BOTTOM))
+
         notePanel = NotificationPanel(this, icons) { openPhoneShade() }
         root.addView(notePanel, FrameLayout.LayoutParams(-1, -1))
         popupLayer = FrameLayout(this)
@@ -391,14 +395,26 @@ class LauncherActivity : Activity() {
 
         val dockHeight = Pixel.dpi(this, prefs.iconDp() + 28)
         val dockSlotW = Pixel.dpi(this, prefs.iconDp() + 64)
+        // The Bitter Searcher bar, if on, sits under the dock and lifts everything above it.
+        val barH = if (prefs.homeSearchBar) Pixel.dpi(this, 48) else 0
+        val lift = if (barH > 0) barH + gap else 0
+        homeSearch.visibility = if (barH > 0) View.VISIBLE else View.GONE
+        homeSearch.accent = prefs.accent
+        (homeSearch.layoutParams as FrameLayout.LayoutParams).apply {
+            height = barH.coerceAtLeast(1)
+            width = minOf(screenW - gap * 2, Pixel.dpi(this@LauncherActivity, 560))
+            gravity = Gravity.BOTTOM or Gravity.CENTER_HORIZONTAL
+            setMargins(gap, 0, gap, insetBottom + gap)
+        }
+        homeSearch.requestLayout()
         (dock.layoutParams as FrameLayout.LayoutParams).apply {
             height = dockHeight
             // Centred, and no wider than its icons need.
             width = minOf(screenW - gap * 2, layout.grid.dockSlots * dockSlotW)
             gravity = Gravity.BOTTOM or Gravity.CENTER_HORIZONTAL
-            setMargins(gap, 0, gap, insetBottom + gap)
+            setMargins(gap, 0, gap, insetBottom + gap + lift)
         }
-        (dots.layoutParams as FrameLayout.LayoutParams).bottomMargin = insetBottom + gap + dockHeight
+        (dots.layoutParams as FrameLayout.LayoutParams).bottomMargin = insetBottom + gap + dockHeight + lift
         (removeBar.layoutParams as FrameLayout.LayoutParams).topMargin = insetTop
 
         // Clock: 55% of a page's width, so each block is a whole number of pixels.
@@ -411,7 +427,7 @@ class LauncherActivity : Activity() {
         clock.font = prefs.clockFont
         val headerHeight = if (prefs.homeClock) block * (PixelGlyphs.H + 1) + Pixel.dpi(this, 30) + gap * 2 else 0
 
-        workspace.setPadding(gap, insetTop + gap + headerHeight, gap, insetBottom + gap * 2 + dockHeight + Pixel.dpi(this, 20))
+        workspace.setPadding(gap, insetTop + gap + headerHeight, gap, insetBottom + gap * 2 + dockHeight + lift + Pixel.dpi(this, 20))
         header.requestLayout()
         // A wide screen gets more drawer columns rather than bigger gaps.
         val drawerCols = maxOf(layout.cols(), screenW / Pixel.dpi(this, prefs.iconDp() + 56))

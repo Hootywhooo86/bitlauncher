@@ -196,6 +196,26 @@ class Prefs(context: Context) {
         get() = sp.getInt("iconTile", 0)
         set(v) = sp.edit().putInt("iconTile", v).apply()
 
+    /** Bitter Searcher: bar style, position, app row size, history, web engine, home bar. */
+    var searchBar: String
+        get() = sp.getString("searchBar", "panel")!!
+        set(v) = sp.edit().putString("searchBar", v).apply()
+    var searchPosition: String
+        get() = sp.getString("searchPosition", "top")!!
+        set(v) = sp.edit().putString("searchPosition", v).apply()
+    var searchApps: Int
+        get() = sp.getInt("searchApps", 5)
+        set(v) = sp.edit().putInt("searchApps", v).apply()
+    var searchHistory: Boolean
+        get() = sp.getBoolean("searchHistory", true)
+        set(v) = sp.edit().putBoolean("searchHistory", v).apply()
+    var searchEngine: String
+        get() = sp.getString("searchEngine", "bit")!!
+        set(v) = sp.edit().putString("searchEngine", v).apply()
+    var homeSearchBar: Boolean
+        get() = sp.getBoolean("homeSearchBar", false)
+        set(v) = sp.edit().putBoolean("homeSearchBar", v).apply()
+
     /** Dock style (see DockStyles.ALL). */
     var dockStyle: String
         get() = sp.getString("dockStyle", "panel")!!
@@ -270,6 +290,12 @@ class Prefs(context: Context) {
         .put("clockFont", clockFont)
         .put("iconStyle", iconStyle)
         .put("dockStyle", dockStyle)
+        .put("searchBar", searchBar)
+        .put("searchPosition", searchPosition)
+        .put("searchApps", searchApps)
+        .put("searchHistory", searchHistory)
+        .put("searchEngine", searchEngine)
+        .put("homeSearchBar", homeSearchBar)
         .put("pageTransition", pageTransition)
         .put("iconMotion", iconMotion)
         .put("lockAccent", lockAccent)
@@ -308,6 +334,12 @@ class Prefs(context: Context) {
         clockFont = o.optString("clockFont", clockFont)
         iconStyle = o.optString("iconStyle", iconStyle)
         dockStyle = o.optString("dockStyle", dockStyle)
+        searchBar = o.optString("searchBar", searchBar)
+        searchPosition = o.optString("searchPosition", searchPosition)
+        searchApps = o.optInt("searchApps", searchApps)
+        searchHistory = o.optBoolean("searchHistory", searchHistory)
+        searchEngine = o.optString("searchEngine", searchEngine)
+        homeSearchBar = o.optBoolean("homeSearchBar", homeSearchBar)
         pageTransition = o.optString("pageTransition", pageTransition)
         iconMotion = o.optString("iconMotion", iconMotion)
         lockAccent = o.optInt("lockAccent", lockAccent)

@@ -98,6 +98,37 @@ class SettingsActivity : Activity() {
             ))
         }
 
+        section("BITTER SEARCHER")
+        body.addView(note("Your search screen: the box, a row of apps (your usual ones, then matches as you type), and your recent searches. Everything stays on this phone."))
+        body.addView(Pixel.label(this, "BAR STYLE", 9f, Pixel.MUTED).apply { setPadding(0, Pixel.dpi(context, 6), 0, Pixel.dpi(context, 6)) })
+        row(SearchLooks.BARS.map { (k, n) -> choice(n.uppercase(), prefs.searchBar == k) { changed { prefs.searchBar = k } } })
+        body.addView(Pixel.label(this, "BAR POSITION", 9f, Pixel.MUTED).apply { setPadding(0, Pixel.dpi(context, 10), 0, Pixel.dpi(context, 6)) })
+        for ((k, n) in SearchLooks.POSITIONS) body.addView(choice(n.uppercase(), prefs.searchPosition == k) { changed { prefs.searchPosition = k } }.full())
+        body.addView(Pixel.label(this, "APP ROW", 9f, Pixel.MUTED).apply { setPadding(0, Pixel.dpi(context, 10), 0, Pixel.dpi(context, 6)) })
+        row(SearchLooks.APP_ROWS.map { (k, n) -> choice(n, prefs.searchApps == k) { changed { prefs.searchApps = k } } })
+        body.addView(Pixel.label(this, "RECENT SEARCHES", 9f, Pixel.MUTED).apply { setPadding(0, Pixel.dpi(context, 10), 0, Pixel.dpi(context, 6)) })
+        row(listOf(
+            choice("KEEP", prefs.searchHistory) { changed { prefs.searchHistory = true } },
+            choice("DON'T KEEP", !prefs.searchHistory) {
+                changed { prefs.searchHistory = false }
+                SearchHistory.clear(this)
+            },
+            choice("CLEAR NOW", false) {
+                SearchHistory.clear(this)
+                Pixel.say(this, "Recent searches cleared.")
+            },
+        ))
+        body.addView(Pixel.label(this, "WEB SEARCH WITH", 9f, Pixel.MUTED).apply { setPadding(0, Pixel.dpi(context, 10), 0, Pixel.dpi(context, 6)) })
+        row(SearchLooks.ENGINES.map { (k, n) -> choice(n.uppercase(), prefs.searchEngine == k) { changed { prefs.searchEngine = k } } })
+        body.addView(Pixel.label(this, "BAR ON HOME, UNDER THE DOCK", 9f, Pixel.MUTED).apply { setPadding(0, Pixel.dpi(context, 10), 0, Pixel.dpi(context, 6)) })
+        row(listOf(
+            choice("ON", prefs.homeSearchBar) { changed { prefs.homeSearchBar = true } },
+            choice("OFF", !prefs.homeSearchBar) { changed { prefs.homeSearchBar = false } },
+        ))
+        body.addView(Pixel.button(this, "TRY IT", accent) {
+            startActivity(Intent(this, SearchActivity::class.java).putExtra(SearchActivity.EXTRA_MODE, "search"))
+        }.full())
+
         section("ANIMATED ICONS")
         body.addView(note("A little hop now and then. Never while the phone saves power or animations are off."))
         for ((key, name) in IconMotion.ALL) body.addView(choice(name.uppercase(), prefs.iconMotion == key) { changed { prefs.iconMotion = key } }.full())
