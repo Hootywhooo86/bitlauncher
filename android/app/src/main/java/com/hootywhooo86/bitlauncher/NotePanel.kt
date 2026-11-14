@@ -88,7 +88,7 @@ object NoteCards {
             return
         }
         try {
-            intent.send()
+            openNotification(intent)
             if (note.autoCancel && note.clearable) NotificationHub.dismiss(note.key)
         } catch (e: Exception) {
             Pixel.say(context, "That notification can't be opened any more.")

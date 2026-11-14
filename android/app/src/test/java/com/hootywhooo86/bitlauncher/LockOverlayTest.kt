@@ -75,10 +75,31 @@ class UnlockAndWallpaperTest {
         val started = shadowOf(service.application).nextStartedActivity
         assertEquals(UnlockActivity::class.java.name, started.component!!.className)
         assertFalse("nothing opens before the phone is unlocked", opened)
+        // If the unlock screen never got to run it, unlocking still opens it a moment later.
         service.sendBroadcast(android.content.Intent(android.content.Intent.ACTION_USER_PRESENT))
-        shadowOf(Looper.getMainLooper()).idle()
+        shadowOf(Looper.getMainLooper()).idleFor(java.time.Duration.ofSeconds(1))
         assertTrue(opened)
         shadowOf(keyguard).setKeyguardLocked(false)
+    }
+
+    @Test
+    fun theUnlockScreenOpensTheTappedNotificationItself() {
+        var opened = 0
+        PendingOpen.set { opened++ }
+        // Unlocked by the time it starts: it opens the notification straight away, once.
+        Robolectric.buildActivity(UnlockActivity::class.java).setup()
+        assertEquals(1, opened)
+        PendingOpen.run()
+        assertEquals(1, opened)
+    }
+
+    @Test
+    fun openingANotificationReallyStartsItsScreen() {
+        val app = org.robolectric.RuntimeEnvironment.getApplication()
+        val target = android.content.Intent(app, SettingsActivity::class.java)
+        val pi = android.app.PendingIntent.getActivity(app, 0, target, android.app.PendingIntent.FLAG_IMMUTABLE)
+        openNotification(pi)
+        assertEquals(SettingsActivity::class.java.name, shadowOf(app).nextStartedActivity.component!!.className)
     }
 
     @Test

@@ -74,14 +74,13 @@ class LockOverlay(private val service: AccessibilityService) : LockHost {
     private var frame: android.widget.FrameLayout? = null
     private var screen: LockScreen? = null
 
-    /** What to do once the phone is unlocked (open the notification that was tapped). */
-    private var afterUnlock: (() -> Unit)? = null
-
+    /**
+     * Unlocked. The unlock screen normally opens the tapped notification itself; if it never
+     * got to show (fingerprint before it appeared), open it from here a moment later.
+     */
     private val unlocked = object : android.content.BroadcastReceiver() {
         override fun onReceive(c: Context, i: android.content.Intent) {
-            val then = afterUnlock
-            afterUnlock = null
-            then?.invoke()
+            if (PendingOpen.waiting) main.postDelayed({ PendingOpen.run() }, 400)
         }
     }
 
@@ -110,7 +109,7 @@ class LockOverlay(private val service: AccessibilityService) : LockHost {
         audio.activePlaybackConfigurations.any { ringing(it.audioAttributes.usage) }
 
     fun show() {
-        afterUnlock = null
+        PendingOpen.set(null)
         if (busy()) return
         frame?.let { f ->
             if (screen?.root?.parent === f) {
@@ -172,7 +171,7 @@ class LockOverlay(private val service: AccessibilityService) : LockHost {
      * tapped opens once unlocked. If Android won't open that screen, its lock screen shows instead.
      */
     override fun dismissKeyguard(done: () -> Unit, failed: () -> Unit) {
-        afterUnlock = done
+        PendingOpen.set(done)
         try {
             service.startActivity(android.content.Intent(service, UnlockActivity::class.java)
                 .addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK or android.content.Intent.FLAG_ACTIVITY_NO_ANIMATION))
@@ -206,16 +205,25 @@ class UnlockActivity : android.app.Activity() {
         setShowWhenLocked(true)
         val keyguard = getSystemService(android.app.KeyguardManager::class.java)
         if (!keyguard.isKeyguardLocked) {
-            finish()
+            PendingOpen.run()
+            done()
             return
         }
         keyguard.requestDismissKeyguard(this, object : android.app.KeyguardManager.KeyguardDismissCallback() {
-            override fun onDismissSucceeded() = done()
+            override fun onDismissSucceeded() {
+                // Still on screen here, so Android lets the notification open its app.
+                PendingOpen.run()
+                done()
+            }
             override fun onDismissCancelled() {
+                PendingOpen.set(null)
                 done()
                 LockService.showLock()
             }
-            override fun onDismissError() = done()
+            override fun onDismissError() {
+                PendingOpen.set(null)
+                done()
+            }
         })
     }
 

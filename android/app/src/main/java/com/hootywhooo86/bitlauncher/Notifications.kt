@@ -248,3 +248,36 @@ class BitNotificationService : NotificationListenerService() {
         )
     }
 }
+
+/**
+ * Open what a notification points at. Android 14 and later block an app from opening a screen
+ * for a notification unless whoever sends it vouches for it, so this does: without it the tap
+ * goes nowhere, with no error. Throws if the notification is gone.
+ */
+fun openNotification(pi: PendingIntent) {
+    val options = if (android.os.Build.VERSION.SDK_INT >= 34) {
+        android.app.ActivityOptions.makeBasic()
+            .setPendingIntentBackgroundActivityStartMode(android.app.ActivityOptions.MODE_BACKGROUND_ACTIVITY_START_ALLOWED)
+            .toBundle()
+    } else null
+    pi.send(null, 0, null, null, null, null, options)
+}
+
+/**
+ * What to do once the phone is unlocked (open the tapped notification). The unlock screen runs it
+ * the moment the PIN is accepted, while it's still on screen and so allowed to open things.
+ */
+object PendingOpen {
+    @Volatile
+    private var action: (() -> Unit)? = null
+
+    fun set(a: (() -> Unit)?) { action = a }
+
+    /** Run it, once. */
+    fun run() {
+        val a = synchronized(this) { action.also { action = null } }
+        a?.invoke()
+    }
+
+    val waiting get() = action != null
+}

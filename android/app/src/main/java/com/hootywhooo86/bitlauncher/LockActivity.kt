@@ -878,7 +878,7 @@ class LockScreen(base: Context, private val host: LockHost) : android.content.Co
             }
             val body = noteBody(n, accent, i)
             body.isClickable = true
-            body.setOnClickListener { openNote(n) }
+            body.setOnClickListener { openNote(n, line.pkg) }
             card.addView(body, FrameLayout.LayoutParams(-1, -2))
             box.addView(card, LinearLayout.LayoutParams(-1, -2).apply { bottomMargin = Pixel.dpi(this@LockScreen, if (look in FLAT) 0 else 6) })
         }
@@ -1022,15 +1022,24 @@ class LockScreen(base: Context, private val host: LockHost) : android.content.Co
         }
     }
 
-    private fun openNote(n: LockNote) {
+    /** The app itself, for a notification that doesn't open anything of its own (or no longer can). */
+    private fun launchApp(pkg: String) {
+        val intent = packageManager.getLaunchIntentForPackage(pkg)?.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        try {
+            if (intent != null) startActivity(intent) else Pixel.say(this, "That app can't be opened from here.")
+        } catch (e: Exception) {
+            Pixel.say(this, "That app can't be opened from here.")
+        }
+    }
+
+    private fun openNote(n: LockNote, pkg: String) {
         val then = {
-            n.intent?.let {
-                try {
-                    it.send()
-                    if (n.autoCancel && n.clearable) NotificationHub.dismiss(n.key)
-                } catch (e: Exception) {
-                    Pixel.say(this, "That notification can't be opened any more.")
-                }
+            val pi = n.intent
+            if (pi == null) launchApp(pkg) else try {
+                openNotification(pi)
+                if (n.autoCancel && n.clearable) NotificationHub.dismiss(n.key)
+            } catch (e: Exception) {
+                launchApp(pkg)
             }
             leave()
         }
@@ -1040,11 +1049,12 @@ class LockScreen(base: Context, private val host: LockHost) : android.content.Co
 
     private fun unlock(line: LockLine?) {
         val then = {
-            line?.intent?.let {
-                try {
-                    it.send()
+            if (line != null) {
+                val pi = line.intent
+                if (pi == null) launchApp(line.pkg) else try {
+                    openNotification(pi)
                 } catch (e: Exception) {
-                    Pixel.say(this, "That notification can't be opened any more.")
+                    launchApp(line.pkg)
                 }
             }
             leave()
