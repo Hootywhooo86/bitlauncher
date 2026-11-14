@@ -318,6 +318,7 @@ class SettingsActivity : Activity() {
         change()
         prefs.touch()
         LockWallpaper.sync(this)
+        SearchWidgets.refreshAll(this)
         (application as? BitApp)?.syncLockScreen()
         if (look != (prefs.accent to prefs.theme)) FamilyTheme.broadcast(this)
         render()

@@ -2,5 +2,9 @@
 <resources>
     <string name="app_name">bitlauncher</string>
     <string name="settings">bitlauncher settings</string>
+    <string name="bitter_searcher">Bitter Searcher</string>
+    <string name="bitter_search_widget_description">Search apps, contacts, notifications, events, settings and the web.</string>
+    <string name="all_apps">All apps</string>
+    <string name="all_apps_widget_description">Opens every app, A to Z.</string>
     <string name="lock_service_description">Lets bitlauncher show its pixel lock screen when your screen turns off, and lock your screen when you double-tap empty space on home. It doesn\'t read or change anything on screen.</string>
 </resources>

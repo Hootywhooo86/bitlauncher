@@ -1392,90 +1392,10 @@ class LauncherActivity : Activity() {
 
     // ---------------------------------------------------------------- search
 
-    /** Everything search can do besides open apps, best first. */
-    private fun searchAnswers(q: String, appMatches: Int): List<DrawerView.Answer> {
-        val out = mutableListOf<DrawerView.Answer>()
-        Search.calculate(q)?.let { out += DrawerView.Answer("= $it", "Calculator  ·  tap to copy") { copy(it) } }
-        Search.convert(q)?.let { out += DrawerView.Answer("= $it", "Conversion  ·  tap to copy") { copy(it.substringBefore(' ')) } }
-        out += contactAnswers(q)
-        for (page in Search.settings(q)) out += DrawerView.Answer(page.label, "Phone settings") {
-            try {
-                startActivity(Intent(page.action))
-                closeDrawer()
-            } catch (e: Exception) {
-                Pixel.say(this, "This phone doesn't have a ${page.label} settings page.")
-            }
-        }
-        // The web is the fallback: only offered when few apps match, so app names stay tidy.
-        if (appMatches < 3 && q.length >= 2) out += webAnswer(q)
-        return out
-    }
+    /** Everything search can do besides open apps: Bitter Searcher. */
+    private val bitter by lazy { BitterSearch(this) { closeDrawer() } }
 
-    private fun copy(text: String) {
-        val clipboard = getSystemService(android.content.ClipboardManager::class.java)
-        clipboard.setPrimaryClip(android.content.ClipData.newPlainText("bitlauncher", text))
-        Pixel.say(this, "Copied $text")
-    }
-
-    private fun contactAnswers(q: String): List<DrawerView.Answer> {
-        if (!prefs.searchContacts || q.length < 2) return emptyList()
-        if (checkSelfPermission(android.Manifest.permission.READ_CONTACTS) != PackageManager.PERMISSION_GRANTED) return emptyList()
-        val out = mutableListOf<DrawerView.Answer>()
-        try {
-            val uri = Uri.withAppendedPath(android.provider.ContactsContract.Contacts.CONTENT_FILTER_URI, Uri.encode(q))
-            val cols = arrayOf(
-                android.provider.ContactsContract.Contacts._ID,
-                android.provider.ContactsContract.Contacts.LOOKUP_KEY,
-                android.provider.ContactsContract.Contacts.DISPLAY_NAME_PRIMARY,
-            )
-            contentResolver.query(uri, cols, null, null, null)?.use { c ->
-                while (c.moveToNext() && out.size < 3) {
-                    val lookup = android.provider.ContactsContract.Contacts.getLookupUri(c.getLong(0), c.getString(1))
-                    val name = c.getString(2) ?: continue
-                    out += DrawerView.Answer(name, "Contact") {
-                        try {
-                            startActivity(Intent(Intent.ACTION_VIEW, lookup))
-                            closeDrawer()
-                        } catch (e: Exception) {
-                            Pixel.say(this, "No contacts app found to open $name.")
-                        }
-                    }
-                }
-            }
-        } catch (e: Exception) {
-            // Contacts unavailable right now; search still works for everything else.
-        }
-        return out
-    }
-
-    /** Search the web, in Bit Browser if it's installed, otherwise the phone's usual search. */
-    private fun webAnswer(q: String): DrawerView.Answer {
-        val bitBrowser = "com.pixelbrowser.app"
-        val hasBit = try {
-            packageManager.getPackageInfo(bitBrowser, 0)
-            true
-        } catch (e: Exception) {
-            false
-        }
-        return DrawerView.Answer("Search the web for \"$q\"", if (hasBit) "Bit Browser" else "Web") {
-            val url = Uri.parse("https://duckduckgo.com/?q=" + Uri.encode(q))
-            val tries = buildList {
-                if (hasBit) {
-                    add(Intent(Intent.ACTION_WEB_SEARCH).putExtra(android.app.SearchManager.QUERY, q).setPackage(bitBrowser))
-                    add(Intent(Intent.ACTION_VIEW, url).setPackage(bitBrowser))
-                }
-                add(Intent(Intent.ACTION_WEB_SEARCH).putExtra(android.app.SearchManager.QUERY, q))
-                add(Intent(Intent.ACTION_VIEW, url))
-            }
-            val intent = tries.firstOrNull { it.resolveActivity(packageManager) != null }
-            if (intent == null) {
-                Pixel.say(this, "No browser found to search the web.")
-            } else {
-                startActivity(intent)
-                closeDrawer()
-            }
-        }
-    }
+    private fun searchAnswers(q: String, appMatches: Int): List<DrawerView.Answer> = bitter.answers(q, appMatches)
 
     // ---------------------------------------------------------------- drawer and folders
 

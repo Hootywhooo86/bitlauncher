@@ -59,6 +59,40 @@
             android:taskAffinity="com.hootywhooo86.bitlauncher.lock"
             android:theme="@style/Theme.Bit.Lock" />
 
+        <!-- Bitter Searcher's own screen, for its widget and the All Apps widget. -->
+        <activity
+            android:name=".SearchActivity"
+            android:excludeFromRecents="true"
+            android:exported="false"
+            android:label="@string/bitter_searcher"
+            android:taskAffinity="com.hootywhooo86.bitlauncher.search"
+            android:theme="@style/Theme.Bit.Home"
+            android:windowSoftInputMode="adjustResize" />
+
+        <receiver
+            android:name=".BitterSearchWidget"
+            android:exported="false"
+            android:label="@string/bitter_searcher">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/bitter_search_widget" />
+        </receiver>
+
+        <receiver
+            android:name=".AllAppsWidget"
+            android:exported="false"
+            android:label="@string/all_apps">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/all_apps_widget" />
+        </receiver>
+
         <!-- Invisible: asks for the PIN pad when you swipe up on the pixel lock screen. -->
         <activity
             android:name=".UnlockActivity"
