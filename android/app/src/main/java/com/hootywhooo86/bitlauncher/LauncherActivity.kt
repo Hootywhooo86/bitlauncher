@@ -310,6 +310,9 @@ class LauncherActivity : Activity() {
 
         dock = DockView(this)
         root.addView(dock, FrameLayout.LayoutParams(-1, 0, Gravity.BOTTOM))
+        // The Bitter Searcher bar belongs to home: Today, the drawer and folders cover it.
+        homeSearch = HomeSearchBar(this)
+        root.addView(homeSearch, FrameLayout.LayoutParams(-1, Pixel.dpi(this, 48), Gravity.BOTTOM))
 
         removeBar = Pixel.label(this, "DROP HERE TO REMOVE", 11f).apply {
             gravity = Gravity.CENTER
@@ -348,9 +351,6 @@ class LauncherActivity : Activity() {
         folderView.visibility = View.GONE
         folderView.onClose = { closeFolder() }
         root.addView(folderView, FrameLayout.LayoutParams(-1, -1))
-
-        homeSearch = HomeSearchBar(this)
-        root.addView(homeSearch, FrameLayout.LayoutParams(-1, Pixel.dpi(this, 48), Gravity.BOTTOM))
 
         notePanel = NotificationPanel(this, icons) { openPhoneShade() }
         root.addView(notePanel, FrameLayout.LayoutParams(-1, -1))
@@ -1098,6 +1098,8 @@ class LauncherActivity : Activity() {
         today.translationX = -todayWidth() * (1f - p)
         today.alpha = 0.4f + 0.6f * p
         for (v in listOf(workspace, dock, dots, header)) v.alpha = 1f - 0.5f * p
+        homeSearch.alpha = 1f - p
+        homeSearch.visibility = if (p > 0.98f || !prefs.homeSearchBar) View.GONE else View.VISIBLE
     }
 
     private fun todayProgress() = if (today.visibility != View.VISIBLE) 0f else 1f + today.translationX / todayWidth()
@@ -1132,6 +1134,8 @@ class LauncherActivity : Activity() {
                 media.stop()
                 setTodayProgress(0f)
                 for (v in listOf(workspace, dock, dots, header)) v.alpha = 1f
+                homeSearch.alpha = 1f
+                homeSearch.visibility = if (prefs.homeSearchBar) View.VISIBLE else View.GONE
             }
         }
         if (!Pixel.motion(this) || from == target) {
@@ -1431,6 +1435,7 @@ class LauncherActivity : Activity() {
         workspace.scaleX = scale
         workspace.scaleY = scale
         for (v in listOf(workspace, dock, dots, header)) v.alpha = 1f - 0.6f * p
+        homeSearch.alpha = 1f - p
     }
 
     private fun drawerProgress() = drawer.alpha
