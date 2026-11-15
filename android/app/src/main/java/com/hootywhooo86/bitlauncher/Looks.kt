@@ -15,7 +15,7 @@ object DockStyles {
         "none" to "Nothing (icons float)",
         "glass" to "Glass shelf",
         "wood" to "Wooden shelf",
-        "cartridge" to "Cartridge slot",
+        "cartridge" to "Game cartridge",
         "rail" to "Railway track",
     )
 }
@@ -69,19 +69,7 @@ class DockDrawable(context: Context, var style: String) : Drawable() {
                 }
                 for (bx in listOf(l + b * 6, R - b * 10)) rect(c, bx, B - b * 2, bx + b * 2, B, dark)
             }
-            "cartridge" -> {
-                // A console's cartridge slot: dark recess, ridged lips, the icons standing in it.
-                rect(c, l, t + b * 2, R, B, Pixel.SHADOW)
-                rect(c, l + b, t + b * 3, R - b, B - b, blend(Pixel.PANEL, Pixel.SHADOW, 0.5f))
-                val lip = edge ?: blend(Pixel.MUTED, Pixel.PANEL, 0.4f)
-                rect(c, l, t, R, t + b * 2, lip)
-                var x = l + b * 2
-                while (x < R - b * 2) {
-                    rect(c, x, t + b * 0.5f, x + b, t + b * 1.5f, Pixel.SHADOW)
-                    x += b * 3
-                }
-                rect(c, l, B - b * 2, R, B, lip)
-            }
+            "cartridge" -> cartridge(c, l, t, R - b * 2, B - b * 2, edge)
             "rail" -> {
                 // The icons ride a short stretch of track: ties, then two rails.
                 val top = B - b * 6
@@ -102,9 +90,66 @@ class DockDrawable(context: Context, var style: String) : Drawable() {
         }
     }
 
+    /**
+     * A whole game cartridge lying on its side: grey plastic shell with a cut corner and grip
+     * ridges, the icons on its label, and gold contacts along the bottom edge.
+     */
+    private fun cartridge(c: Canvas, l: Float, t: Float, R: Float, B: Float, edge: Int?) {
+        val shell = 0xFF9C9CA8.toInt()
+        val light = 0xFFC4C4CE.toInt()
+        val dark = 0xFF65656F.toInt()
+        val cut = b * 6 // the corner cut, top right
+        // Hard shadow, then the shell (stepped corner cut so it stays pixel art).
+        rect(c, l + b * 2, t + b * 2, R + b * 2, B + b * 2, withAlpha(Pixel.SHADOW, 200))
+        rect(c, l, t, R - cut, B, shell)
+        var step = 0f
+        while (step < cut) {
+            rect(c, R - cut + step, t + step + b, R - cut + step + b, B, shell)
+            rect(c, R - cut + step, t + step, R - cut + step + b, t + step + b, dark)
+            step += b
+        }
+        rect(c, R - b, t + cut, R, B, shell)
+        // Bevel: light top and left, dark bottom and right.
+        rect(c, l, t, R - cut, t + b, light)
+        rect(c, l, t, l + b, B, light)
+        rect(c, R - b, t + cut, R, B, dark)
+        rect(c, l, B - b, R, B, dark)
+        // Grip ridges along the top.
+        val gl = l + b * 6
+        val gr = R - cut - b * 4
+        for (k in 0 until 3) {
+            val y = t + b * 2 + k * b * 2
+            rect(c, gl, y, gr, y + b, dark)
+            rect(c, gl, y + b, gr, y + b * 1.5f, light)
+        }
+        // The label: an accent band across the top, the dark face the icons sit on.
+        val ll = l + b * 3
+        val lr = R - b * 3
+        val lt = t + b * 9
+        val lb = B - b * 7
+        rect(c, ll - b, lt - b, lr + b, lb + b, dark)
+        rect(c, ll, lt, lr, lb, Pixel.PANEL)
+        rect(c, ll, lt, lr, lt + b * 2, edge ?: accent)
+        rect(c, ll, lt + b * 2, lr, lt + b * 3, withAlpha(Pixel.SHADOW, 160))
+        // Gold contacts along the bottom edge.
+        val pt = B - b * 5
+        rect(c, l + b * 4, pt - b, R - b * 4, B - b, dark)
+        var x = l + b * 5
+        while (x < R - b * 6) {
+            rect(c, x, pt, x + b * 2, B - b, 0xFFD9B44A.toInt())
+            rect(c, x, pt, x + b * 2, pt + b, 0xFFF2D27A.toInt())
+            x += b * 4
+        }
+    }
+
     override fun setAlpha(alpha: Int) {}
     override fun setColorFilter(colorFilter: ColorFilter?) {}
     override fun getOpacity() = PixelFormat.TRANSLUCENT
+
+    companion object {
+        /** Extra room a style needs above and below the icons, in dp: (top, bottom). */
+        fun room(style: String): Pair<Int, Int> = if (style == "cartridge") 22 to 16 else 6 to 8
+    }
 }
 
 /** Page transitions when swiping between home pages. */

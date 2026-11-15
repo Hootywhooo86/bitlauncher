@@ -75,7 +75,7 @@ class LooksTest {
         val ctx = RuntimeEnvironment.getApplication()
         val dir = System.getenv("SHOT_DIR")
         val w = 1000
-        val h = 200
+        val h = 230
         val sheet = Bitmap.createBitmap(w + 40, (h + 30) * DockStyles.ALL.size + 30, Bitmap.Config.ARGB_8888)
         sheet.eraseColor(0xFF2A3350.toInt()) // something like a scene behind
         val c = Canvas(sheet)

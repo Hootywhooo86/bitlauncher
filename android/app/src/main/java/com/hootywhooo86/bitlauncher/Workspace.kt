@@ -471,7 +471,13 @@ class DockView(context: Context) : ViewGroup(context) {
     /** Dock style (see DockStyles.ALL). */
     var style: String
         get() = look.style
-        set(v) { look.style = v; invalidate() }
+        set(v) {
+            look.style = v
+            val (top, bottom) = DockDrawable.room(v)
+            val side = Pixel.dpi(context, if (v == "cartridge") 12 else 6)
+            setPadding(side, Pixel.dpi(context, top), side + Pixel.dpi(context, 2), Pixel.dpi(context, bottom))
+            invalidate()
+        }
 
     /** Lit in the accent while something is dragged over it. */
     var highlight: Boolean

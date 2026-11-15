@@ -393,7 +393,8 @@ class LauncherActivity : Activity() {
         // like two phones side by side, not one phone stretched.
         val paneW = (screenW - gap * 2 - workspace.gutter * (workspace.panes - 1)) / workspace.panes
 
-        val dockHeight = Pixel.dpi(this, prefs.iconDp() + 28)
+        // The cartridge dock needs room for its ridges and contacts around the icons.
+        val dockHeight = Pixel.dpi(this, prefs.iconDp() + 28 + (DockDrawable.room(prefs.dockStyle).let { it.first + it.second } - 14))
         val dockSlotW = Pixel.dpi(this, prefs.iconDp() + 64)
         // The Bitter Searcher bar, if on, sits under the dock and lifts everything above it.
         val barH = if (prefs.homeSearchBar) Pixel.dpi(this, 48) else 0
