@@ -114,8 +114,24 @@ object Hourly {
                     orientation = LinearLayout.VERTICAL
                     gravity = Gravity.CENTER_HORIZONTAL
                     addView(Pixel.label(context, if (i == 0) "NOW" else tf.format(Date(h.time)).uppercase(), 8f, if (i == 0) accent else Pixel.MUTED))
-                    addView(GlyphView(context, sprite(h.code), if (WeatherCodes.sky(h.code) == Sky.CLEAR) 0xFFFFD34D.toInt() else Pixel.INK),
-                        LinearLayout.LayoutParams(Pixel.dpi(context, 22), Pixel.dpi(context, 22)).apply { topMargin = Pixel.dpi(context, 6); bottomMargin = Pixel.dpi(context, 6) })
+                    addView(GlyphView(context, sprite(h.code), if (WeatherCodes.sky(h.code) == Sky.CLEAR) 0xFFFFD34D.toInt() else Pixel.INK).also { g ->
+                        // Each little symbol bobs (fog slides) on its own beat.
+                        if (Pixel.motion(context)) {
+                            val fog = WeatherCodes.sky(h.code) == Sky.FOG
+                            val bob = android.animation.ObjectAnimator.ofFloat(g, if (fog) View.TRANSLATION_X else View.TRANSLATION_Y, 0f, Pixel.dp(context, if (fog) 3f else -2f)).apply {
+                                duration = 900L + i * 110L
+                                repeatMode = android.animation.ValueAnimator.REVERSE
+                                repeatCount = android.animation.ValueAnimator.INFINITE
+                                interpolator = android.view.animation.AccelerateDecelerateInterpolator()
+                                startDelay = i * 150L
+                            }
+                            // Only while it's on screen: Today is rebuilt often, and nothing should run behind it.
+                            g.addOnAttachStateChangeListener(object : View.OnAttachStateChangeListener {
+                                override fun onViewAttachedToWindow(v: View) = bob.start()
+                                override fun onViewDetachedFromWindow(v: View) = bob.cancel()
+                            })
+                        }
+                    }, LinearLayout.LayoutParams(Pixel.dpi(context, 22), Pixel.dpi(context, 22)).apply { topMargin = Pixel.dpi(context, 6); bottomMargin = Pixel.dpi(context, 6) })
                     addView(Pixel.label(context, WeatherCodes.temp(h.tempC, fahrenheit), 10f, Pixel.INK))
                     h.rainPct?.takeIf { it >= 20 }?.let { addView(Pixel.label(context, "$it%", 7f, 0xFF60A5FA.toInt()).apply { setPadding(0, Pixel.dpi(context, 3), 0, 0) }) }
                 }, LinearLayout.LayoutParams(0, -2, 1f))

@@ -204,6 +204,16 @@ object TodayCards {
                 onFix?.let { fix -> addView(Pixel.button(context, "SETTINGS", accent) { fix() }, LinearLayout.LayoutParams(-2, -2).apply { topMargin = Pixel.dpi(context, 10) }) }
                 return@apply
             }
+            // The weather, alive: fog rolls, clouds drift, rain falls, wind blows.
+            addView(WeatherArtView(context).apply {
+                sky = w.sky
+                windKmh = w.windKmh
+                night = System.currentTimeMillis().let { it < w.sunrise || it > w.sunset }
+                this.accent = accent
+            }, LinearLayout.LayoutParams(-1, Pixel.dpi(context, 84)).apply {
+                topMargin = Pixel.dpi(context, 8)
+                bottomMargin = Pixel.dpi(context, 8)
+            })
             addView(LinearLayout(context).apply {
                 gravity = Gravity.BOTTOM
                 addView(Pixel.label(context, WeatherCodes.temp(w.tempC, fahrenheit), 34f, Pixel.INK))
@@ -211,7 +221,8 @@ object TodayCards {
                     orientation = LinearLayout.VERTICAL
                     setPadding(Pixel.dpi(context, 14), 0, 0, Pixel.dpi(context, 4))
                     addView(body(context, WeatherCodes.describe(w.code), 15f))
-                    addView(body(context, "Feels ${WeatherCodes.temp(w.feelsC, fahrenheit)}  ·  H ${WeatherCodes.temp(w.highC, fahrenheit)}  L ${WeatherCodes.temp(w.lowC, fahrenheit)}", 13f, Pixel.MUTED))
+                    addView(body(context, "Feels ${WeatherCodes.temp(w.feelsC, fahrenheit)}  ·  H ${WeatherCodes.temp(w.highC, fahrenheit)}  L ${WeatherCodes.temp(w.lowC, fahrenheit)}" +
+                        (if (w.windKmh >= 1) "  ·  Wind ${Math.round(if (fahrenheit) w.windKmh * 0.621 else w.windKmh)} ${if (fahrenheit) "mph" else "km/h"}" else ""), 13f, Pixel.MUTED))
                 })
             })
             val tf = DateFormat.getTimeFormat(context)

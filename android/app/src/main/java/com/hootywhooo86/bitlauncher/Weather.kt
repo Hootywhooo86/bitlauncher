@@ -33,6 +33,8 @@ data class WeatherNow(
     val place: String? = null,
     /** The next hours, from the reading's hour on; empty for older readings without them. */
     val hours: List<WeatherHour> = emptyList(),
+    /** Wind at 10 m, km/h; 0 for older readings. */
+    val windKmh: Double = 0.0,
 ) {
     val sky: Sky get() = WeatherCodes.sky(code)
 }
@@ -105,6 +107,7 @@ object WeatherCodes {
             fetchedAt = now,
             place = place,
             hours = hours,
+            windKmh = current.optDouble("wind_speed_10m", 0.0),
         )
     }
 
@@ -164,7 +167,7 @@ class WeatherClient(private val context: Context) {
                 val place = placeName(loc)
                 val url = URL(
                     "https://api.open-meteo.com/v1/forecast?latitude=%.3f&longitude=%.3f".format(Locale.US, loc.latitude, loc.longitude) +
-                        "&current=temperature_2m,apparent_temperature,weather_code" +
+                        "&current=temperature_2m,apparent_temperature,weather_code,wind_speed_10m" +
                         "&daily=weather_code,temperature_2m_max,temperature_2m_min,sunrise,sunset" +
                         "&hourly=temperature_2m,weather_code,precipitation_probability" +
                         "&timezone=auto&forecast_days=2",
