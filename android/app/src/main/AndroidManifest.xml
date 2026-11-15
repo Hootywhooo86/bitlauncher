@@ -7,6 +7,10 @@
     <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
     <!-- Only if you turn on "On the phone's lock screen too": sets the lock screen wallpaper. -->
     <uses-permission android:name="android.permission.SET_WALLPAPER" />
+    <!-- Only for Today's "On this day", and only once you tap Show my photos. Read only. -->
+    <uses-permission android:name="android.permission.READ_MEDIA_IMAGES" />
+    <uses-permission android:name="android.permission.READ_MEDIA_VISUAL_USER_SELECTED" />
+    <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" android:maxSdkVersion="32" />
     <!-- Uninstall from the long-press menu. -->
     <uses-permission android:name="android.permission.REQUEST_DELETE_PACKAGES" />
     <!-- Only if you turn on contact search in Settings; asked for then, not before. -->

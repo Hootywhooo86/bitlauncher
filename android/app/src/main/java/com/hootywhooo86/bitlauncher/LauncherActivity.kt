@@ -1168,27 +1168,54 @@ class LauncherActivity : Activity() {
         cards.addView(Pixel.label(this, java.text.SimpleDateFormat("d MMMM", java.util.Locale.getDefault()).format(java.util.Date()).uppercase(), 20f, Pixel.INK).apply {
             setPadding(0, Pixel.dpi(context, 6), 0, Pixel.dpi(context, 16))
         })
-        cards.addView(TodayCards.weather(this, accent, lastWeather.takeIf { prefs.weather },
-            if (prefs.weather) weather.problem else null, prefs.fahrenheit) { startActivity(Intent(this, SettingsActivity::class.java)) })
-        cards.addView(TodayCards.events(this, accent,
-            if (CalendarSource.hasPermission(this)) CalendarSource.upcoming(this) else null,
-            onAsk = { requestPermissions(arrayOf(android.Manifest.permission.READ_CALENDAR), REQ_CALENDAR) },
-            onOpen = { e ->
-                try {
-                    startActivity(Intent(Intent.ACTION_VIEW, android.content.ContentUris.withAppendedId(android.provider.CalendarContract.Events.CONTENT_URI, e.id))
-                        .putExtra(android.provider.CalendarContract.EXTRA_EVENT_BEGIN_TIME, e.begin)
-                        .putExtra(android.provider.CalendarContract.EXTRA_EVENT_END_TIME, e.end))
-                } catch (ex: Exception) {
-                    Pixel.say(this, "No calendar app found to open that event.")
+        if (editingToday) {
+            renderTodayEditor(cards, accent)
+            return
+        }
+        val events = if (CalendarSource.hasPermission(this)) CalendarSource.upcoming(this) else null
+        val hidden = prefs.todayHidden
+        for (key in TodayOrder.order(prefs)) {
+            if (key in hidden) continue
+            val card: View? = when (key) {
+                "glance" -> Glance.build(this, prefs, lastWeather.takeIf { prefs.weather }, events.orEmpty())?.let {
+                    Pixel.label(this, it.uppercase(), 10f, Pixel.INK).apply {
+                        setLineSpacing(Pixel.dp(context, 5f), 1f)
+                        setPadding(0, 0, 0, Pixel.dpi(context, 14))
+                    }
                 }
-            }))
-        media.current()?.let { cards.addView(TodayCards.media(this, accent, it)) }
-        Tickets.next(this)?.let { cards.addView(TicketView.make(this, it, accent), android.widget.LinearLayout.LayoutParams(-1, -2).apply {
-            bottomMargin = Pixel.dpi(this@LauncherActivity, 14)
-        }) }
-        cards.addView(TodayCards.family(this, accent, account.signedIn, familyEvents, familyProblem) {
-            startActivity(Intent(this, SettingsActivity::class.java))
-        })
+                "weather" -> TodayCards.weather(this, accent, lastWeather.takeIf { prefs.weather },
+                    if (prefs.weather) weather.problem else null, prefs.fahrenheit) { startActivity(Intent(this, SettingsActivity::class.java)) }
+                "events" -> TodayCards.events(this, accent, events,
+                    onAsk = { requestPermissions(arrayOf(android.Manifest.permission.READ_CALENDAR), REQ_CALENDAR) },
+                    onOpen = { e ->
+                        try {
+                            startActivity(Intent(Intent.ACTION_VIEW, android.content.ContentUris.withAppendedId(android.provider.CalendarContract.Events.CONTENT_URI, e.id))
+                                .putExtra(android.provider.CalendarContract.EXTRA_EVENT_BEGIN_TIME, e.begin)
+                                .putExtra(android.provider.CalendarContract.EXTRA_EVENT_END_TIME, e.end))
+                        } catch (ex: Exception) {
+                            Pixel.say(this, "No calendar app found to open that event.")
+                        }
+                    })
+                "media" -> media.current()?.let { TodayCards.media(this, accent, it) }
+                "ticket" -> Tickets.next(this)?.let { t ->
+                    android.widget.LinearLayout(this).apply {
+                        orientation = android.widget.LinearLayout.VERTICAL
+                        addView(TicketView.make(context, t, accent))
+                        val address = prefs.workAddress
+                        if (t.kind == "SHIFT" && address.isNotBlank()) addView(Pixel.button(context, "DIRECTIONS TO WORK", accent) {
+                            Commute.directions(this@LauncherActivity, address)
+                        }, android.widget.LinearLayout.LayoutParams(-1, -2).apply { topMargin = Pixel.dpi(context, 8) })
+                    }
+                }
+                "notes" -> QuickNotes.card(this, accent)
+                "onthisday" -> OnThisDay.card(this, accent) { requestPermissions(arrayOf(OnThisDay.permission()), REQ_PHOTOS) }
+                "family" -> TodayCards.family(this, accent, account.signedIn, familyEvents, familyProblem) {
+                    startActivity(Intent(this, SettingsActivity::class.java))
+                }
+                else -> null
+            }
+            if (card != null) cards.addView(card, android.widget.LinearLayout.LayoutParams(-1, -2).apply { bottomMargin = Pixel.dpi(this@LauncherActivity, 14) })
+        }
 
         val stored = prefs.todayWidgets
         for ((id, _, hDp) in stored) {
@@ -1209,6 +1236,44 @@ class LauncherActivity : Activity() {
             gravity = Gravity.CENTER
             setPadding(0, Pixel.dpi(context, 10), 0, 0)
         })
+        cards.addView(Pixel.button(this, "EDIT CARDS", Pixel.MUTED) {
+            editingToday = true
+            renderToday()
+        }, android.widget.LinearLayout.LayoutParams(-1, -2).apply { topMargin = Pixel.dpi(this@LauncherActivity, 10) })
+    }
+
+    /** Today's card editor: move cards up and down, show or hide them. */
+    private var editingToday = false
+
+    private fun renderTodayEditor(cards: android.widget.LinearLayout, accent: Int) {
+        cards.addView(Pixel.label(this, "EDIT CARDS", 11f, accent).apply { setPadding(0, 0, 0, Pixel.dpi(context, 10)) })
+        val hidden = prefs.todayHidden
+        val order = TodayOrder.order(prefs)
+        order.forEachIndexed { i, key ->
+            val shown = key !in hidden
+            cards.addView(android.widget.LinearLayout(this).apply {
+                gravity = Gravity.CENTER_VERTICAL
+                background = PanelDrawable(context, Pixel.PANEL, if (shown) withAlpha(accent, 160) else withAlpha(Pixel.MUTED, 90))
+                val p = Pixel.dpi(context, 10)
+                setPadding(p, p, p + Pixel.dpi(context, 2), p + Pixel.dpi(context, 2))
+                addView(Pixel.label(context, TodayOrder.name(key).uppercase(), 10f, if (shown) Pixel.INK else Pixel.MUTED), android.widget.LinearLayout.LayoutParams(0, -2, 1f))
+                fun small(text: String, enabled: Boolean, run: () -> Unit) = addView(Pixel.label(context, text, 10f, if (enabled) Pixel.INK else withAlpha(Pixel.MUTED, 90)).apply {
+                    val q = Pixel.dpi(context, 9)
+                    setPadding(q, q, q, q)
+                    isClickable = enabled
+                    if (enabled) setOnClickListener { run(); renderToday() }
+                })
+                small("▲", i > 0) { TodayOrder.move(prefs, key, -1) }
+                small("▼", i < order.size - 1) { TodayOrder.move(prefs, key, 1) }
+                small(if (shown) "HIDE" else "SHOW", true) {
+                    prefs.todayHidden = if (shown) hidden + key else hidden - key
+                }
+            }, android.widget.LinearLayout.LayoutParams(-1, -2).apply { bottomMargin = Pixel.dpi(this@LauncherActivity, 6) })
+        }
+        cards.addView(Pixel.button(this, "DONE", accent) {
+            editingToday = false
+            renderToday()
+        }, android.widget.LinearLayout.LayoutParams(-1, -2).apply { topMargin = Pixel.dpi(this@LauncherActivity, 8) })
     }
 
     private fun todayWidgetView(id: Int): PixelWidgetView? {
@@ -2262,6 +2327,10 @@ class LauncherActivity : Activity() {
 
     override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, grantResults: IntArray) {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults)
+        if (requestCode == REQ_PHOTOS) {
+            if (grantResults.firstOrNull() != PackageManager.PERMISSION_GRANTED && !OnThisDay.allowed(this)) Pixel.say(this, "On this day stays empty: bitlauncher wasn't allowed to see photos.")
+            if (today.visibility == View.VISIBLE) renderToday()
+        }
         if (requestCode == REQ_CALENDAR) {
             if (grantResults.firstOrNull() != PackageManager.PERMISSION_GRANTED) Pixel.say(this, "Calendar stays hidden: bitlauncher wasn't allowed to read it.")
             if (today.visibility == View.VISIBLE) renderToday()
@@ -2298,5 +2367,6 @@ class LauncherActivity : Activity() {
         private const val REQ_CONFIG = 12
         private const val REQ_ICON = 13
         private const val REQ_CALENDAR = 14
+        private const val REQ_PHOTOS = 15
     }
 }

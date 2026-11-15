@@ -31,9 +31,14 @@ data class WeatherNow(
     val sunset: Long,
     val fetchedAt: Long,
     val place: String? = null,
+    /** The next hours, from the reading's hour on; empty for older readings without them. */
+    val hours: List<WeatherHour> = emptyList(),
 ) {
     val sky: Sky get() = WeatherCodes.sky(code)
 }
+
+/** One hour of the forecast: [rainPct] is the chance of rain or snow, if Open-Meteo gave one. */
+data class WeatherHour(val time: Long, val tempC: Double, val code: Int, val rainPct: Int?)
 
 /** WMO weather codes, as Open-Meteo reports them. */
 object WeatherCodes {
@@ -80,6 +85,15 @@ object WeatherCodes {
         val current = o.getJSONObject("current")
         val daily = o.getJSONObject("daily")
         fun localTime(s: String) = LocalDateTime.parse(s).toEpochSecond(offset) * 1000
+        val hours = o.optJSONObject("hourly")?.let { h ->
+            val times = h.getJSONArray("time")
+            val temps = h.getJSONArray("temperature_2m")
+            val codes = h.getJSONArray("weather_code")
+            val rain = h.optJSONArray("precipitation_probability")
+            (0 until times.length()).map { i ->
+                WeatherHour(localTime(times.getString(i)), temps.getDouble(i), codes.getInt(i), rain?.let { if (it.isNull(i)) null else it.getInt(i) })
+            }.filter { it.time >= now - 3600_000L }.take(12)
+        } ?: emptyList()
         return WeatherNow(
             tempC = current.getDouble("temperature_2m"),
             feelsC = current.optDouble("apparent_temperature", current.getDouble("temperature_2m")),
@@ -90,6 +104,7 @@ object WeatherCodes {
             sunset = localTime(daily.getJSONArray("sunset").getString(0)),
             fetchedAt = now,
             place = place,
+            hours = hours,
         )
     }
 
@@ -151,7 +166,8 @@ class WeatherClient(private val context: Context) {
                     "https://api.open-meteo.com/v1/forecast?latitude=%.3f&longitude=%.3f".format(Locale.US, loc.latitude, loc.longitude) +
                         "&current=temperature_2m,apparent_temperature,weather_code" +
                         "&daily=weather_code,temperature_2m_max,temperature_2m_min,sunrise,sunset" +
-                        "&timezone=auto&forecast_days=1",
+                        "&hourly=temperature_2m,weather_code,precipitation_probability" +
+                        "&timezone=auto&forecast_days=2",
                 )
                 val raw = (url.openConnection() as HttpURLConnection).run {
                     connectTimeout = 8000

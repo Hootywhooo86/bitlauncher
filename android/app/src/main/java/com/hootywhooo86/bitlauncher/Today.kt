@@ -218,6 +218,11 @@ object TodayCards {
             addView(Pixel.label(context, "SUNRISE ${tf.format(Date(w.sunrise))}   SUNSET ${tf.format(Date(w.sunset))}", 9f, Pixel.MUTED).apply {
                 setPadding(0, Pixel.dpi(context, 10), 0, 0)
             })
+            // The next few hours, and a plain warning if it's going to be wet.
+            Hourly.strip(context, w.hours, fahrenheit, accent)?.let { addView(it, LinearLayout.LayoutParams(-1, -2)) }
+            Hourly.warning(w.hours, System.currentTimeMillis()) { tf.format(Date(it)) }?.let {
+                addView(body(context, it, 14f, 0xFF60A5FA.toInt()).apply { setPadding(0, Pixel.dpi(context, 10), 0, 0) })
+            }
             // Old readings say how old they are: no pretending.
             if (System.currentTimeMillis() - w.fetchedAt > 2 * 3600_000L) {
                 addView(body(context, "Updated ${DateUtils.getRelativeTimeSpanString(w.fetchedAt)}", 12f, Pixel.MUTED))

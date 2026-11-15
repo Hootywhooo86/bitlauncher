@@ -386,6 +386,27 @@ class SettingsActivity : Activity() {
             Pixel.button(this, "TO ${clockText(prefs.shiftEnd)}", accent) { pickTime(prefs.shiftEnd) { prefs.shiftEnd = it } },
         ))
         body.addView(note("An end earlier than the start is an overnight shift. Switching by hand holds until the schedule next changes."))
+        body.addView(Pixel.label(this, "WORK ADDRESS", 9f, Pixel.MUTED).apply { setPadding(0, Pixel.dpi(context, 12), 0, Pixel.dpi(context, 6)) })
+        body.addView(android.widget.EditText(this).apply {
+            setText(prefs.workAddress)
+            hint = "For directions from Today's shift card"
+            setHintTextColor(Pixel.MUTED)
+            setTextColor(Pixel.INK)
+            textSize = 15f
+            isSingleLine = true
+            background = PanelDrawable(context, Pixel.PANEL, Pixel.MUTED, shadow = false)
+            val p = Pixel.dpi(context, 10)
+            setPadding(p, p, p, p)
+            addTextChangedListener(object : android.text.TextWatcher {
+                override fun beforeTextChanged(s: CharSequence?, a: Int, b: Int, c: Int) {}
+                override fun onTextChanged(s: CharSequence?, a: Int, b: Int, c: Int) {}
+                override fun afterTextChanged(e: android.text.Editable?) {
+                    prefs.workAddress = e.toString().trim()
+                    prefs.touch()
+                }
+            })
+        }.full())
+        body.addView(note("Stays on this phone. DIRECTIONS TO WORK opens your maps app; bitlauncher never guesses travel times."))
     }
 
     private fun notificationSection(accent: Int) {

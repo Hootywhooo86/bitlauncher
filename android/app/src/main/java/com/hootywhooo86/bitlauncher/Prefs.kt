@@ -216,6 +216,19 @@ class Prefs(context: Context) {
         get() = sp.getBoolean("homeSearchBar", false)
         set(v) = sp.edit().putBoolean("homeSearchBar", v).apply()
 
+    /** Today's cards in your order (see TodayOrder.CARDS), and the ones you've hidden. */
+    var todayOrder: List<String>
+        get() = sp.getString("todayOrder", "")!!.split(',').filter { it.isNotBlank() }
+        set(v) = sp.edit().putString("todayOrder", v.joinToString(",")).apply()
+    var todayHidden: Set<String>
+        get() = sp.getStringSet("todayHidden", emptySet())!!.toSet()
+        set(v) = sp.edit().putStringSet("todayHidden", v).apply()
+
+    /** Where you work, for directions from the shift card. Empty if not set. */
+    var workAddress: String
+        get() = sp.getString("workAddress", "")!!
+        set(v) = sp.edit().putString("workAddress", v).apply()
+
     /** Dock style (see DockStyles.ALL). */
     var dockStyle: String
         get() = sp.getString("dockStyle", "panel")!!
@@ -290,6 +303,9 @@ class Prefs(context: Context) {
         .put("clockFont", clockFont)
         .put("iconStyle", iconStyle)
         .put("dockStyle", dockStyle)
+        .put("todayOrder", todayOrder.joinToString(","))
+        .put("todayHidden", JSONArray(todayHidden.toList()))
+        .put("workAddress", workAddress)
         .put("searchBar", searchBar)
         .put("searchPosition", searchPosition)
         .put("searchApps", searchApps)
@@ -334,6 +350,9 @@ class Prefs(context: Context) {
         clockFont = o.optString("clockFont", clockFont)
         iconStyle = o.optString("iconStyle", iconStyle)
         dockStyle = o.optString("dockStyle", dockStyle)
+        o.optString("todayOrder", "").takeIf { it.isNotBlank() }?.let { todayOrder = it.split(',') }
+        o.optJSONArray("todayHidden")?.let { a -> todayHidden = (0 until a.length()).map { a.getString(it) }.toSet() }
+        workAddress = o.optString("workAddress", workAddress)
         searchBar = o.optString("searchBar", searchBar)
         searchPosition = o.optString("searchPosition", searchPosition)
         searchApps = o.optInt("searchApps", searchApps)

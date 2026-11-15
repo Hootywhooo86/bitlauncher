@@ -48,6 +48,7 @@ class LayoutStore(context: Context, mode: String = Shift.HOME) {
                 .put("backup", 1)
                 .put("layout", home.load(prefs.grid).toJson())
                 .put("settings", prefs.toJson())
+                .put("notes", QuickNotes.text(context))
                 .also { o -> if (!work.isFirstRun()) o.put("work", work.load(prefs.grid).toJson()) }
         }
 
@@ -61,6 +62,7 @@ class LayoutStore(context: Context, mode: String = Shift.HOME) {
             prefs.grid = layout.grid
             prefs.restore(settings)
             LayoutStore(context, Shift.HOME).save(layout)
+            if (o.has("notes")) QuickNotes.save(context, o.getString("notes"))
             o.optJSONObject("work")?.let {
                 val work = HomeLayout.fromJson(it)
                 dropped += dropDeadWidgets(context, work)
