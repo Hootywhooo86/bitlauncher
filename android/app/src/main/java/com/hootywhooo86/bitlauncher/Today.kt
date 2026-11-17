@@ -209,8 +209,9 @@ object TodayCards {
                 sky = w.sky
                 windKmh = w.windKmh
                 night = System.currentTimeMillis().let { it < w.sunrise || it > w.sunset }
+                overcast = w.code == 3
                 this.accent = accent
-            }, LinearLayout.LayoutParams(-1, Pixel.dpi(context, 84)).apply {
+            }, LinearLayout.LayoutParams(-1, -2).apply {
                 topMargin = Pixel.dpi(context, 8)
                 bottomMargin = Pixel.dpi(context, 8)
             })
@@ -230,7 +231,7 @@ object TodayCards {
                 setPadding(0, Pixel.dpi(context, 10), 0, 0)
             })
             // The next few hours, and a plain warning if it's going to be wet.
-            Hourly.strip(context, w.hours, fahrenheit, accent)?.let { addView(it, LinearLayout.LayoutParams(-1, -2)) }
+            Hourly.strip(context, w.hours, fahrenheit, accent, w.sunrise, w.sunset)?.let { addView(it, LinearLayout.LayoutParams(-1, -2)) }
             Hourly.warning(w.hours, System.currentTimeMillis()) { tf.format(Date(it)) }?.let {
                 addView(body(context, it, 14f, 0xFF60A5FA.toInt()).apply { setPadding(0, Pixel.dpi(context, 10), 0, 0) })
             }

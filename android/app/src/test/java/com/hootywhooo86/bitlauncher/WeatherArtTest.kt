@@ -28,20 +28,20 @@ class WeatherArtTest {
     fun everyWeatherMovesFromFrameToFrame() {
         val ctx = RuntimeEnvironment.getApplication()
         val cases = listOf(
-            Triple(Sky.FOG, false, 5.0), Triple(Sky.CLOUDY, false, 20.0), Triple(Sky.RAIN, false, 10.0),
+            Triple(Sky.FOG, false, 5.0), Triple(Sky.CLOUDY, false, 2.0), Triple(Sky.CLOUDY, false, 20.0), Triple(Sky.RAIN, false, 10.0),
             Triple(Sky.SNOW, false, 5.0), Triple(Sky.STORM, false, 30.0), Triple(Sky.CLEAR, false, 0.0), Triple(Sky.CLEAR, true, 0.0),
         )
         val w = 1000
-        val h = 230
+        val h = 282
         val sheet = Bitmap.createBitmap(w * 2 + 30, (h + 20) * cases.size + 20, Bitmap.Config.ARGB_8888)
         sheet.eraseColor(Pixel.BG)
         val c = Canvas(sheet)
         cases.forEachIndexed { row, (sky, night, wind) ->
-            val v = WeatherArtView(ctx).apply { this.sky = sky; this.night = night; windKmh = wind }
+            val v = WeatherArtView(ctx).apply { this.sky = sky; this.night = night; windKmh = wind; overcast = sky == Sky.CLOUDY && wind < 5 }
             v.measure(View.MeasureSpec.makeMeasureSpec(w, View.MeasureSpec.EXACTLY), View.MeasureSpec.makeMeasureSpec(h, View.MeasureSpec.EXACTLY))
             v.layout(0, 0, w, h)
             val a = shot(v)
-            v.advance(5)
+            v.advance(6)
             val b = shot(v)
             assertFalse("$sky should move", a.sameAs(b))
             c.drawBitmap(a, 10f, 20f + row * (h + 20), null)

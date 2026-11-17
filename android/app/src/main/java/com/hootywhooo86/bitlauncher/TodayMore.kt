@@ -103,7 +103,10 @@ object Hourly {
     }
 
     /** Six hours across: time, sprite, temperature. */
-    fun strip(context: Context, hours: List<WeatherHour>, fahrenheit: Boolean, accent: Int, now: Long = System.currentTimeMillis()): View? {
+    fun strip(context: Context, hours: List<WeatherHour>, fahrenheit: Boolean, accent: Int, sunrise: Long = 0L, sunset: Long = 0L, now: Long = System.currentTimeMillis()): View? {
+        // Night for an hour: before today's sunrise or after its sunset, by the clock (good enough for the next six hours).
+        fun minuteOfDay(t: Long) = java.util.Calendar.getInstance().apply { timeInMillis = t }.let { it.get(java.util.Calendar.HOUR_OF_DAY) * 60 + it.get(java.util.Calendar.MINUTE) }
+        fun isNight(t: Long) = sunrise > 0 && sunset > 0 && minuteOfDay(t).let { it < minuteOfDay(sunrise) || it > minuteOfDay(sunset) }
         val soon = hours.filter { it.time + 3600_000L > now }.take(6)
         if (soon.size < 2) return null
         val tf = java.text.SimpleDateFormat(if (DateFormat.is24HourFormat(context)) "HH" else "ha", java.util.Locale.getDefault())
@@ -114,7 +117,7 @@ object Hourly {
                     orientation = LinearLayout.VERTICAL
                     gravity = Gravity.CENTER_HORIZONTAL
                     addView(Pixel.label(context, if (i == 0) "NOW" else tf.format(Date(h.time)).uppercase(), 8f, if (i == 0) accent else Pixel.MUTED))
-                    addView(GlyphView(context, sprite(h.code), if (WeatherCodes.sky(h.code) == Sky.CLEAR) 0xFFFFD34D.toInt() else Pixel.INK).also { g ->
+                    addView(MiniWeatherView(context, h.code, isNight(h.time)).also { g ->
                         // Each little symbol bobs (fog slides) on its own beat.
                         if (Pixel.motion(context)) {
                             val fog = WeatherCodes.sky(h.code) == Sky.FOG
@@ -131,7 +134,7 @@ object Hourly {
                                 override fun onViewDetachedFromWindow(v: View) = bob.cancel()
                             })
                         }
-                    }, LinearLayout.LayoutParams(Pixel.dpi(context, 22), Pixel.dpi(context, 22)).apply { topMargin = Pixel.dpi(context, 6); bottomMargin = Pixel.dpi(context, 6) })
+                    }, LinearLayout.LayoutParams(Pixel.dpi(context, 30), Pixel.dpi(context, 24)).apply { topMargin = Pixel.dpi(context, 6); bottomMargin = Pixel.dpi(context, 6) })
                     addView(Pixel.label(context, WeatherCodes.temp(h.tempC, fahrenheit), 10f, Pixel.INK))
                     h.rainPct?.takeIf { it >= 20 }?.let { addView(Pixel.label(context, "$it%", 7f, 0xFF60A5FA.toInt()).apply { setPadding(0, Pixel.dpi(context, 3), 0, 0) }) }
                 }, LinearLayout.LayoutParams(0, -2, 1f))
