@@ -202,6 +202,23 @@ class IconStylesTest {
         }
     }
 
+    @org.junit.Before
+    fun chunky() { IconCache.SIZE = 32 } // these samples are 32x32
+
+    @org.junit.After
+    fun back() { IconCache.SIZE = 64 }
+
+    @Test
+    fun fineLooksScaleTheSameShapes() {
+        IconCache.SIZE = 64
+        val red = IntArray(64 * 64) { i -> if ((i % 64) in 14..49 && (i / 64) in 14..49) 0xFFE04040.toInt() else 0 }
+        for ((key, _) in IconStyles.ALL) assertEquals(key, 64 * 64, IconStyles.render(red, key, 0xFF8B7CF6.toInt()).size)
+        // The coin's corner stays clear and its middle is filled at the bigger size too.
+        val coin = IconStyles.render(red, "coin", 0)
+        assertEquals(0, coin[0])
+        assertTrue(coin[32 * 64 + 32] != 0)
+    }
+
     @Test
     fun everyLookKeepsTheGridAndChangesTheIcon() {
         val red = sample(0xFFE04040.toInt())

@@ -38,6 +38,7 @@ object Pixel {
     /** Pick up the saved theme; screens call this when they start. */
     fun load(context: Context) {
         val prefs = Prefs(context)
+        IconCache.SIZE = if (prefs.pixelDetail == "chunky") 32 else 64
         val key = prefs.theme
         theme = if (key == "custom") custom(prefs) else THEMES.firstOrNull { it.key == key } ?: THEMES[0]
     }

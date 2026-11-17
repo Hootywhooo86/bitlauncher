@@ -32,7 +32,10 @@ object IconStyles {
     @Volatile
     var tile = 0
 
-    private const val S = IconCache.SIZE
+    private val S get() = IconCache.SIZE
+
+    /** Shapes are drawn on a 32 grid and scaled up to the sprite size. */
+    private val K get() = S / 32
     private val cache = WeakHashMap<Bitmap, Pair<String, Bitmap>>()
 
     /** [sprite] in the current look. */
@@ -118,15 +121,19 @@ object IconStyles {
         return out
     }
 
-    private fun paste(out: IntArray, small: IntArray, n: Int, ox: Int, oy: Int) {
-        for (y in 0 until n) for (x in 0 until n) {
-            val p = small[y * n + x]
-            if (Color.alpha(p) != 0) out[(oy + y) * S + ox + x] = p
+    /** The sprite shrunk to [n] (on the 32 grid) and placed at [ox], [oy] (on the 32 grid). */
+    private fun paste(out: IntArray, sprite: IntArray, n: Int, ox: Int, oy: Int) {
+        val size = n * K
+        val small = shrink(sprite, size)
+        for (y in 0 until size) for (x in 0 until size) {
+            val p = small[y * size + x]
+            if (Color.alpha(p) != 0) out[(oy * K + y) * S + ox * K + x] = p
         }
     }
 
+    /** A rectangle given on the 32 grid, filled at the sprite's real size. */
     private fun rect(out: IntArray, x0: Int, y0: Int, x1: Int, y1: Int, c: Int) {
-        for (y in y0..y1) for (x in x0..x1) if (x in 0 until S && y in 0 until S) out[y * S + x] = c
+        for (y in y0 * K until (y1 + 1) * K) for (x in x0 * K until (x1 + 1) * K) if (x in 0 until S && y in 0 until S) out[y * S + x] = c
     }
 
     /** A bevelled tile in the icon's own colour, notched corners, the sprite on top. */
@@ -144,7 +151,7 @@ object IconStyles {
         rect(out, 1, 2, 1, 29, blend(tile, Color.WHITE, 0.18f))
         rect(out, 2, 30, 29, 30, blend(tile, Color.BLACK, 0.35f)) // dark bottom edge
         rect(out, 30, 2, 30, 29, blend(tile, Color.BLACK, 0.25f))
-        paste(out, shrink(sprite, 22), 22, 5, 5)
+        paste(out, sprite, 22, 5, 5)
         return out
     }
 
@@ -153,17 +160,17 @@ object IconStyles {
         val out = IntArray(S * S)
         val face = base(sprite, picked)
         val rim = blend(face, Color.BLACK, 0.35f)
-        val c = 15.5f
+        val c = (S - 1) / 2f
         for (y in 0 until S) for (x in 0 until S) {
-            val d = sqrt((x - c) * (x - c) + (y - c) * (y - c))
+            val d = sqrt((x - c) * (x - c) + (y - c) * (y - c)) / K
             out[y * S + x] = when {
-                d <= 13.6f -> if ((x - c) + (y - c) < -14f && d > 10.5f) blend(face, Color.WHITE, 0.35f) else face
+                d <= 13.6f -> if (((x - c) + (y - c)) / K < -14f && d > 10.5f) blend(face, Color.WHITE, 0.35f) else face
                 d <= 15.2f -> rim
                 d <= 16f -> Pixel.SHADOW
                 else -> 0
             }
         }
-        paste(out, shrink(sprite, 20), 20, 6, 6)
+        paste(out, sprite, 20, 6, 6)
         return out
     }
 
@@ -182,7 +189,7 @@ object IconStyles {
         for (y in 2..5 step 2) rect(out, 7, y, 21, y, dark) // grip ridges
         rect(out, 6, 8, 25, 28, Pixel.SHADOW)
         rect(out, 7, 9, 24, 27, label)
-        paste(out, shrink(sprite, 16), 16, 8, 10)
+        paste(out, sprite, 16, 8, 10)
         rect(out, 4, 30, 27, 30, dark)
         return out
     }
@@ -197,7 +204,7 @@ object IconStyles {
         rect(out, 3, 3, 28, 28, Pixel.SHADOW)
         rect(out, 4, 4, 27, 27, Pixel.PANEL)
         for ((x, y) in listOf(1 to 1, 29 to 1, 1 to 29, 29 to 29)) rect(out, x, y, x + 1, y + 1, Pixel.INK)
-        paste(out, shrink(sprite, 22), 22, 5, 5)
+        paste(out, sprite, 22, 5, 5)
         return out
     }
 }

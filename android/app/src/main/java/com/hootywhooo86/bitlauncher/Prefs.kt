@@ -244,6 +244,11 @@ class Prefs(context: Context) {
         get() = sp.getString("iconMotion", "off")!!
         set(v) = sp.edit().putString("iconMotion", v).apply()
 
+    /** "fine" (64-pixel sprites, the 128 look) or "chunky" (32-pixel, the original). */
+    var pixelDetail: String
+        get() = sp.getString("pixelDetail", "fine")!!
+        set(v) = sp.edit().putString("pixelDetail", v).apply()
+
     /** How app icons look (see IconStyles.ALL). */
     var iconStyle: String
         get() = sp.getString("iconStyle", "sprite")!!
@@ -302,6 +307,7 @@ class Prefs(context: Context) {
         .put("lockWallpaper", lockWallpaper)
         .put("clockFont", clockFont)
         .put("iconStyle", iconStyle)
+        .put("pixelDetail", pixelDetail)
         .put("dockStyle", dockStyle)
         .put("todayOrder", todayOrder.joinToString(","))
         .put("todayHidden", JSONArray(todayHidden.toList()))
@@ -349,6 +355,7 @@ class Prefs(context: Context) {
         lockWallpaper = o.optBoolean("lockWallpaper", lockWallpaper)
         clockFont = o.optString("clockFont", clockFont)
         iconStyle = o.optString("iconStyle", iconStyle)
+        pixelDetail = o.optString("pixelDetail", pixelDetail)
         dockStyle = o.optString("dockStyle", dockStyle)
         o.optString("todayOrder", "").takeIf { it.isNotBlank() }?.let { todayOrder = it.split(',') }
         o.optJSONArray("todayHidden")?.let { a -> todayHidden = (0 until a.length()).map { a.getString(it) }.toSet() }

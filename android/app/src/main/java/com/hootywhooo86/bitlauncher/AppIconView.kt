@@ -183,6 +183,9 @@ class AppIconView(context: Context) : View(context) {
         val labelSpace = if (showLabel) textPaint.textSize * 2f else 0f
         val room = minOf(width.toFloat(), height - labelSpace).takeIf { it > 0 } ?: want
         val target = minOf(want, room * 0.92f)
+        // Chunky sprites scale by whole numbers so every pixel is the same size; fine ones are
+        // small enough that filling the space reads better.
+        if (IconCache.SIZE > 32) return target.toInt().coerceAtLeast(IconCache.SIZE / 2)
         val scale = max(1, (target / IconCache.SIZE).toInt())
         return scale * IconCache.SIZE
     }

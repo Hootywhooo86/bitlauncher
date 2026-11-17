@@ -80,6 +80,13 @@ class SettingsActivity : Activity() {
             choice("UNLOCKED", !prefs.layoutLocked) { changed { prefs.layoutLocked = false } },
         ))
 
+        section("PIXEL DETAIL")
+        body.addView(note("How fine the pixel art is. Fine draws icons at 64 by 64 pixels, the 128 look; Chunky is the original 32 by 32."))
+        row(listOf(
+            choice("FINE", prefs.pixelDetail != "chunky") { changed { prefs.pixelDetail = "fine" } },
+            choice("CHUNKY", prefs.pixelDetail == "chunky") { changed { prefs.pixelDetail = "chunky" } },
+        ))
+
         section("ICON LOOK")
         body.addView(note("Reshape every app icon to match. Folders keep their own style."))
         body.addView(iconPreview(), LinearLayout.LayoutParams(-1, -2).apply { bottomMargin = Pixel.dpi(this@SettingsActivity, 10) })

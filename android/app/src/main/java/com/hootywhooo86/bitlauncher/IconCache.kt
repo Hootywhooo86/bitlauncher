@@ -13,11 +13,12 @@ import java.security.MessageDigest
  * the expensive step only runs when an app is installed or updated.
  */
 class IconCache(context: Context) {
-    private val dir = File(context.filesDir, "icons").apply { mkdirs() }
+    // Each pixel detail keeps its own sprites, so switching back and forth costs nothing twice.
+    private val dir = File(context.filesDir, if (SIZE == 32) "icons" else "icons$SIZE").apply { mkdirs() }
 
     /** Icons you picked yourself for an app; these win over the app's and the icon pack's. */
     private val customDir = File(context.filesDir, "custom-icons").apply { mkdirs() }
-    private val stamps = context.getSharedPreferences("iconStamps", Context.MODE_PRIVATE)
+    private val stamps = context.getSharedPreferences(if (SIZE == 32) "iconStamps" else "iconStamps$SIZE", Context.MODE_PRIVATE)
     private val memory = HashMap<String, Bitmap>()
 
     /** The sprite for [key], or null if we have never seen it. Fast enough for the UI thread. */
@@ -88,8 +89,10 @@ class IconCache(context: Context) {
     }
 
     companion object {
-        const val SIZE = 32
-        private const val INNER = 30
+        /** Sprite edge in pixels: 32 (chunky) or 64 (fine), from the Pixel detail setting. */
+        @Volatile
+        var SIZE = 64
+        private val INNER get() = SIZE - 2
         private const val SAMPLE = 3
 
         /**

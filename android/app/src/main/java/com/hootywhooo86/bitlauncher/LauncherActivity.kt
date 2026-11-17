@@ -472,7 +472,7 @@ class LauncherActivity : Activity() {
     }
 
     /** The theme and its colours: a custom theme's colours changing counts as a new theme. */
-    private fun themeSignature(): String = Pixel.themeFor(prefs, prefs.theme).let { "${it.key}|${it.bg}|${it.panel}|${it.ink}|${it.muted}" }
+    private fun themeSignature(): String = Pixel.themeFor(prefs, prefs.theme).let { "${it.key}|${it.bg}|${it.panel}|${it.ink}|${it.muted}|${prefs.pixelDetail}" }
 
     /** The app opened most recently from home, for the "app you used last" animation. */
     private var lastUsed: AppKey? = null

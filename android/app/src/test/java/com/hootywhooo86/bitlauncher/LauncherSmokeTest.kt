@@ -190,18 +190,24 @@ class LauncherSmokeTest {
 
     @Test
     fun spriteIsCrispAndOutlined() {
-        // A solid red 90x90 square becomes a 30x30 red block with a dark 1px border.
-        val big = 90
-        val red = 0xFFFF0000.toInt()
-        val sprite = IconCache.spriteFrom(IntArray(big * big) { red }, big)
-        assertEquals(32 * 32, sprite.size)
-        assertEquals(Pixel.SHADOW, sprite[0 * 32 + 5]) // outline row
-        assertEquals(red, sprite[1 * 32 + 1])
-        assertEquals(0, sprite[0]) // corner stays clear
-        // Half-transparent pixels snap to fully on or off: nothing in between.
-        val faint = IconCache.spriteFrom(IntArray(big * big) { 0x40FF0000 }, big)
-        assertTrue(faint.all { it == 0 })
-        assertNotEquals(0, sprite.count { it == red })
+        // Both pixel details: a solid red square becomes a red block (SIZE-2 across) with a dark 1px border.
+        val before = IconCache.SIZE
+        for (size in listOf(32, 64)) {
+            IconCache.SIZE = size
+            val big = (size - 2) * 3
+            val red = 0xFFFF0000.toInt()
+            val sprite = IconCache.spriteFrom(IntArray(big * big) { red }, big)
+            assertEquals(size * size, sprite.size)
+            assertEquals(Pixel.SHADOW, sprite[0 * size + 5]) // outline row
+            assertEquals(red, sprite[1 * size + 1])
+            assertEquals(red, sprite[(size - 2) * size + size - 2]) // fills to the far corner
+            assertEquals(0, sprite[0]) // corner stays clear
+            // Half-transparent pixels snap to fully on or off: nothing in between.
+            val faint = IconCache.spriteFrom(IntArray(big * big) { 0x40FF0000 }, big)
+            assertTrue(faint.all { it == 0 })
+            assertNotEquals(0, sprite.count { it == red })
+        }
+        IconCache.SIZE = before
     }
 
     private fun hasVisibleText(v: View, text: String): Boolean {
