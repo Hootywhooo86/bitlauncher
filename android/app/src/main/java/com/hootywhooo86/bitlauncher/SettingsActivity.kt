@@ -454,9 +454,14 @@ class SettingsActivity : Activity() {
                 }
             }.full())
         }
-        if (prefs.popups != "off") body.addView(note("Pop-ups show for new, important notifications, never while the phone is locked or on Do Not Disturb. Android's own pop-up still shows too, unless you turn off \"Pop on screen\" for an app in its notification settings."))
+        if (prefs.popups != "off") body.addView(note("Never two at once: when Android pops a notification up itself, bitlauncher stays out of the way. To get the pixel pop-up for an app instead, turn off \"Pop on screen\" for that app in Android's notification settings. Never while the phone is locked or on Do Not Disturb."))
 
         section("LOCK SCREEN")
+        if (prefs.lockScreen && LockFixes.systemShowsLockNotifications(this)) {
+            body.addView(note("Google's lock screen is still showing notifications too, so you can see them twice when it peeks through. Turn them off there; the pixel lock screen keeps showing yours."))
+            body.addView(Pixel.button(this, "HIDE GOOGLE'S LOCK SCREEN NOTIFICATIONS", accent) { LockFixes.openLockNotificationSettings(this) }.full())
+        }
+        LockFixes.pinPadReport(this)?.let { body.addView(note(it)) }
         body.addView(note("A pixel clock and your notifications, shown in front of your phone's lock screen. Swipe up to unlock with your own PIN, pattern or fingerprint. It never replaces them."))
         row(listOf(
             choice("ON", prefs.lockScreen) { changed { prefs.lockScreen = true } },

@@ -32,6 +32,8 @@ data class Note(
     val autoCancel: Boolean = false,
     /** Important enough to pop up (default importance or higher, not silent). */
     val loud: Boolean = true,
+    /** Android will show its own pop-up for it (high importance): bitlauncher then doesn't, so you never see two. */
+    val headsUp: Boolean = false,
 )
 
 /** One notification of an opened-up app on the lock screen, with only what the privacy rules allow. */
@@ -118,7 +120,7 @@ object NotificationHub {
 
     /** Should [new] pop up? Only fresh, loud, countable ones: no progress-bar updates, no silent ones. */
     fun worthPopping(previous: Note?, new: Note): Boolean =
-        NotePrivacy.countable(new) && new.loud && (previous == null || new.posted > previous.posted + 1000) &&
+        NotePrivacy.countable(new) && new.loud && !new.headsUp && (previous == null || new.posted > previous.posted + 1000) &&
             (new.title.isNotBlank() || new.text.isNotBlank())
 
     /** Swipe a notification away (for real: it leaves the phone's shade too). */
@@ -244,6 +246,13 @@ class BitNotificationService : NotificationListenerService() {
                     (ranking.importance >= android.app.NotificationManager.IMPORTANCE_DEFAULT && ranking.matchesInterruptionFilter())
             } catch (e: Exception) {
                 true
+            },
+            headsUp = try {
+                val ranking = Ranking()
+                // High importance is what makes Android pop a notification up on screen itself.
+                currentRanking.getRanking(sbn.key, ranking) && ranking.importance >= android.app.NotificationManager.IMPORTANCE_HIGH
+            } catch (e: Exception) {
+                true // unsure: assume Android shows it, so there's never a double
             },
         )
     }

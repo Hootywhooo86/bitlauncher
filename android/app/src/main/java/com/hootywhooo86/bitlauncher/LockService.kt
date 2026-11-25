@@ -172,6 +172,7 @@ class LockOverlay(private val service: AccessibilityService) : LockHost {
      */
     override fun dismissKeyguard(done: () -> Unit, failed: () -> Unit) {
         PendingOpen.set(done)
+        LockFixes.askedForPinPad(service)
         try {
             service.startActivity(android.content.Intent(service, UnlockActivity::class.java)
                 .addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK or android.content.Intent.FLAG_ACTIVITY_NO_ANIMATION))
@@ -203,6 +204,7 @@ class UnlockActivity : android.app.Activity() {
     override fun onCreate(savedInstanceState: android.os.Bundle?) {
         super.onCreate(savedInstanceState)
         setShowWhenLocked(true)
+        LockFixes.pinPadOpened(this)
         val keyguard = getSystemService(android.app.KeyguardManager::class.java)
         if (!keyguard.isKeyguardLocked) {
             PendingOpen.run()
@@ -231,5 +233,44 @@ class UnlockActivity : android.app.Activity() {
         finish()
         @Suppress("DEPRECATION")
         overridePendingTransition(0, 0)
+    }
+}
+
+/** Small things that keep the phone's own lock screen out of sight behind the pixel one. */
+object LockFixes {
+    private fun sp(c: Context) = c.getSharedPreferences("lockFixes", Context.MODE_PRIVATE)
+
+    /** Is Google's (the system's) lock screen set to show notifications? */
+    fun systemShowsLockNotifications(c: Context): Boolean = try {
+        android.provider.Settings.Secure.getInt(c.contentResolver, "lock_screen_show_notifications", 1) != 0
+    } catch (e: Exception) {
+        false
+    }
+
+    /** Straight to the phone's lock screen notification settings, or as close as this phone allows. */
+    fun openLockNotificationSettings(c: Context) {
+        val tries = listOf("android.settings.LOCK_SCREEN_NOTIFICATIONS_SETTINGS", "android.settings.LOCK_SCREEN_SETTINGS", "android.settings.NOTIFICATION_SETTINGS", android.provider.Settings.ACTION_SETTINGS)
+        val intent = tries.map { android.content.Intent(it) }.firstOrNull { it.resolveActivity(c.packageManager) != null }
+        if (intent == null) {
+            Pixel.say(c, "Open Settings, then Notifications, then Notifications on lock screen, and choose Don't show.")
+            return
+        }
+        c.startActivity(intent.addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK))
+        Pixel.say(c, "Choose: don't show notifications on the lock screen.")
+    }
+
+    /** A swipe up asked for the PIN pad. */
+    fun askedForPinPad(c: Context) = sp(c).edit().putLong("asked", System.currentTimeMillis()).apply()
+
+    /** The unlock screen really opened (so the PIN pad came straight up). */
+    fun pinPadOpened(c: Context) = sp(c).edit().putLong("opened", System.currentTimeMillis()).apply()
+
+    /** One honest sentence about the last unlock, or null if there's nothing to say yet. */
+    fun pinPadReport(c: Context): String? {
+        val asked = sp(c).getLong("asked", 0L)
+        if (asked == 0L) return null
+        val opened = sp(c).getLong("opened", 0L)
+        return if (opened >= asked) "Last unlock: swiping up went straight to your PIN pad."
+        else "Last unlock: Android didn't let bitlauncher open the PIN pad directly, so Google's lock screen showed first. Turning bitlauncher off and on again in Accessibility usually fixes this."
     }
 }

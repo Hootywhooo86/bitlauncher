@@ -216,3 +216,28 @@ class NotePanelTest {
         prefs.sceneTime = "auto"
     }
 }
+
+@RunWith(RobolectricTestRunner::class)
+@Config(sdk = [34])
+class NoDoublesTest {
+    @Test
+    fun neverPopsUpWhatAndroidAlreadyPopsUp() {
+        val n = Note("k", "chat", 0, "Sam", "Hi", android.app.Notification.VISIBILITY_PRIVATE, null, null, false, false, 1L)
+        assertTrue(NotificationHub.worthPopping(null, n))
+        assertFalse("Android shows this one itself", NotificationHub.worthPopping(null, n.copy(headsUp = true)))
+    }
+
+    @Test
+    fun lockFixesSpotGooglesLockScreenNotificationsAndReportTheUnlock() {
+        val ctx = RuntimeEnvironment.getApplication()
+        Settings.Secure.putInt(ctx.contentResolver, "lock_screen_show_notifications", 1)
+        assertTrue(LockFixes.systemShowsLockNotifications(ctx))
+        Settings.Secure.putInt(ctx.contentResolver, "lock_screen_show_notifications", 0)
+        assertFalse(LockFixes.systemShowsLockNotifications(ctx))
+        LockFixes.askedForPinPad(ctx)
+        assertTrue(LockFixes.pinPadReport(ctx)!!.contains("didn't let"))
+        Thread.sleep(5)
+        LockFixes.pinPadOpened(ctx)
+        assertTrue(LockFixes.pinPadReport(ctx)!!.contains("straight to your PIN pad"))
+    }
+}
