@@ -195,6 +195,14 @@ class TicketDrawable(context: Context, private val fill: Int, private val edge: 
 class CornerButton(context: Context, private val icon: Array<String>, private val accent: Int) : View(context) {
     var on = false
         set(v) { field = v; invalidate() }
+
+    /** An app's own sprite, for a corner set to open an app. */
+    var sprite: android.graphics.Bitmap? = null
+        set(v) { field = v; invalidate() }
+
+    /** 0..1 while you hold it: the button fills up from the bottom, then fires. */
+    var progress = 0f
+        set(v) { field = v; invalidate() }
     private val p = Paint()
 
     override fun onDraw(c: Canvas) {
@@ -203,6 +211,19 @@ class CornerButton(context: Context, private val icon: Array<String>, private va
         c.drawRect(u * 0.6f, u * 0.6f, width.toFloat(), height.toFloat(), p)
         p.color = if (on) accent else withAlpha(Pixel.PANEL, 235)
         c.drawRect(0f, 0f, width - u * 0.6f, height - u * 0.6f, p)
+        if (progress > 0f) {
+            p.color = withAlpha(accent, 200)
+            val h = height - u * 0.6f
+            // In whole sprite-pixels, so the fill steps up like a pixel meter.
+            val rows = (progress * 12).toInt()
+            c.drawRect(0f, h - rows * u, width - u * 0.6f, h, p)
+        }
+        val app = sprite
+        if (app != null) {
+            val pad = u * 2
+            c.drawBitmap(app, null, android.graphics.RectF(pad, pad, width - u * 0.6f - pad, height - u * 0.6f - pad), Paint().apply { isFilterBitmap = false })
+            return
+        }
         p.color = if (on) Pixel.BG else Pixel.INK
         val ox = (12 - icon[0].length) / 2f * u - u * 0.3f
         val oy = (12 - icon.size) / 2f * u - u * 0.3f
@@ -218,7 +239,7 @@ class CornerButton(context: Context, private val icon: Array<String>, private va
 }
 
 /** Turns the flashlight on and off, and says if there isn't one. */
-class Torch(private val context: Context, private val onChange: (Boolean) -> Unit) {
+class Torch(private val context: Context, private val say: (String) -> Unit = { Pixel.say(context, it) }, private val onChange: (Boolean) -> Unit) {
     private val cm = context.getSystemService(CameraManager::class.java)
     private val id: String? = try {
         cm.cameraIdList.firstOrNull { cm.getCameraCharacteristics(it).get(CameraCharacteristics.FLASH_INFO_AVAILABLE) == true }
@@ -249,7 +270,7 @@ class Torch(private val context: Context, private val onChange: (Boolean) -> Uni
     fun toggle() {
         val cam = id
         if (cam == null) {
-            Pixel.say(context, "This phone has no flashlight bitlauncher can use.")
+            say("This phone has no flashlight bitlauncher can use.")
             return
         }
         try {
@@ -257,7 +278,7 @@ class Torch(private val context: Context, private val onChange: (Boolean) -> Uni
             on = !on
             onChange(on)
         } catch (e: Exception) {
-            Pixel.say(context, "The flashlight is busy (the camera may be using it).")
+            say("The flashlight is busy (the camera may be using it).")
         }
     }
 }
@@ -277,5 +298,21 @@ object TicketView {
             words.addView(Pixel.label(context, countdown(t.at - now), 9f, Pixel.MUTED).apply { setPadding(0, Pixel.dpi(context, 5), 0, 0) })
             addView(words, android.widget.LinearLayout.LayoutParams(0, -2, 1f).apply { leftMargin = Pixel.dpi(context, 12) })
         }
+    }
+}
+
+/** What a lock screen corner does: the flashlight, the camera, an app of your choice, or nothing. */
+object Corners {
+    const val TORCH = "torch"
+    const val CAMERA = "camera"
+    const val OFF = "off"
+
+    fun app(key: AppKey) = "app:${key.pkg}|${key.cls}|${key.user}"
+
+    fun appKey(value: String): AppKey? {
+        if (!value.startsWith("app:")) return null
+        val parts = value.removePrefix("app:").split('|')
+        if (parts.size != 3) return null
+        return AppKey(parts[0], parts[1], parts[2].toLongOrNull() ?: return null)
     }
 }

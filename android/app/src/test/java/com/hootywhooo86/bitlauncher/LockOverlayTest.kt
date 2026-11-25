@@ -330,3 +330,54 @@ class ColorsTest {
         assertEquals(0xFF20C0A0.toInt(), picked)
     }
 }
+
+@RunWith(RobolectricTestRunner::class)
+@Config(sdk = [35])
+class LockCornersTest {
+    private fun all(v: View, out: MutableList<View> = mutableListOf()): List<View> {
+        out.add(v)
+        if (v is ViewGroup) for (i in 0 until v.childCount) all(v.getChildAt(i), out)
+        return out
+    }
+
+    private fun touch(v: View, action: Int) = v.dispatchTouchEvent(android.view.MotionEvent.obtain(0, 0, action, 10f, 10f, 0))
+
+    @Test
+    fun cornersSaveTheirChoice() {
+        val key = AppKey("com.example.maps", "com.example.maps.Main", 0)
+        assertEquals(key, Corners.appKey(Corners.app(key)))
+        assertEquals(null, Corners.appKey(Corners.TORCH))
+        val prefs = Prefs(org.robolectric.RuntimeEnvironment.getApplication())
+        prefs.lockRight = Corners.app(key)
+        val restored = prefs.toJson()
+        prefs.lockRight = Corners.CAMERA
+        prefs.restore(restored)
+        assertEquals(Corners.app(key), prefs.lockRight)
+        prefs.lockRight = Corners.CAMERA
+    }
+
+    @Test
+    fun holdingFillsAndFiresATapSaysHoldAndOffHidesIt() {
+        val ctx = org.robolectric.RuntimeEnvironment.getApplication()
+        Prefs(ctx).apply { lockLeft = Corners.CAMERA; lockRight = Corners.OFF }
+        val lock = Robolectric.buildActivity(LockActivity::class.java).setup().get()
+        shadowOf(Looper.getMainLooper()).idle()
+        val root = lock.window.decorView
+        val corners = all(root).filterIsInstance<CornerButton>()
+        assertEquals("the off corner is hidden", 1, corners.count { it.visibility == View.VISIBLE })
+        val camera = corners.first { it.visibility == View.VISIBLE }
+        // A quick tap: no camera, and HOLD TO USE shows on the lock screen itself.
+        touch(camera, android.view.MotionEvent.ACTION_DOWN)
+        touch(camera, android.view.MotionEvent.ACTION_UP)
+        shadowOf(Looper.getMainLooper()).idle()
+        assertTrue(all(root).filterIsInstance<android.widget.TextView>().any { it.isShown && it.text.toString() == "HOLD TO USE" })
+        assertEquals(null, shadowOf(lock).nextStartedActivity)
+        // Holding: it fills, then opens the camera.
+        touch(camera, android.view.MotionEvent.ACTION_DOWN)
+        shadowOf(Looper.getMainLooper()).idleFor(java.time.Duration.ofMillis(600))
+        val started = shadowOf(lock).nextStartedActivity
+        assertTrue(started != null && started.action!!.contains("STILL_IMAGE_CAMERA"))
+        touch(camera, android.view.MotionEvent.ACTION_UP)
+        Prefs(ctx).apply { lockLeft = Corners.TORCH; lockRight = Corners.CAMERA }
+    }
+}

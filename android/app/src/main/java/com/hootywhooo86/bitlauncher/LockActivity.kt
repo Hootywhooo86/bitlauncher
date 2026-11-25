@@ -409,10 +409,19 @@ class LockScreen(base: Context, private val host: LockHost) : android.content.Co
 
         // Camera and flashlight in the bottom corners. Hold to use, so a pocket can't.
         val size = Pixel.dpi(this, 52)
-        camera = CornerButton(this, CornerButton.CAMERA, accent).apply { hold(this) { openCamera() } }
-        torchButton = CornerButton(this, CornerButton.TORCH, accent).apply { hold(this) { torch.toggle() } }
+        torchButton = corner(prefs.lockLeft, accent)
+        camera = corner(prefs.lockRight, accent)
         root.addView(torchButton, FrameLayout.LayoutParams(size, size, Gravity.BOTTOM or Gravity.START))
         root.addView(camera, FrameLayout.LayoutParams(size, size, Gravity.BOTTOM or Gravity.END))
+        // Messages shown right on the lock screen (Android may not show toasts over it).
+        notice = Pixel.label(this, "", 10f, Pixel.INK).apply {
+            gravity = Gravity.CENTER
+            background = PanelDrawable(context, Pixel.PANEL, accent)
+            val p = Pixel.dpi(context, 10)
+            setPadding(p, p, p, p)
+            visibility = View.GONE
+        }
+        root.addView(notice, FrameLayout.LayoutParams(-2, -2, Gravity.BOTTOM or Gravity.CENTER_HORIZONTAL))
         if (look == "arcade") {
             // CRT scanlines over everything, and the prompt fades like an attract screen.
             root.addView(ScreenTexture(this, grid = false), FrameLayout.LayoutParams(-1, -1))
@@ -439,8 +448,11 @@ class LockScreen(base: Context, private val host: LockHost) : android.content.Co
             }
             (content.layoutParams as FrameLayout.LayoutParams).topMargin = maxOf(top, statusBar) + Pixel.dpi(this, 72)
             ((hint.parent as View).layoutParams as FrameLayout.LayoutParams).bottomMargin = bottom + Pixel.dpi(this, 24)
+            // Clear of the gesture bar even when the overlay isn't told how tall it is.
+            val safe = maxOf(bottom, Pixel.dpi(this, 48))
+            (notice.layoutParams as FrameLayout.LayoutParams).bottomMargin = safe + Pixel.dpi(this, 96)
             for (b in listOf(camera, torchButton)) (b.layoutParams as FrameLayout.LayoutParams).apply {
-                bottomMargin = bottom + Pixel.dpi(this@LockScreen, 20)
+                bottomMargin = safe + Pixel.dpi(this@LockScreen, 20)
                 leftMargin = Pixel.dpi(this@LockScreen, 24)
                 rightMargin = Pixel.dpi(this@LockScreen, 24)
             }
@@ -453,16 +465,110 @@ class LockScreen(base: Context, private val host: LockHost) : android.content.Co
     private lateinit var ticketBox: FrameLayout
     private lateinit var camera: CornerButton
     private lateinit var torchButton: CornerButton
-    private val torch by lazy { Torch(this) { torchButton.on = it } }
+    private lateinit var notice: TextView
+    private val torchButtons = mutableListOf<CornerButton>()
+    private val torch by lazy { Torch(this, ::say) { on -> torchButtons.forEach { it.on = on } } }
 
-    /** Hold for a moment to use [button]; a tap just says to hold. */
-    private fun hold(button: View, action: () -> Unit) {
-        button.setOnLongClickListener {
-            button.performHapticFeedback(android.view.HapticFeedbackConstants.LONG_PRESS)
-            action()
+    /** One sentence on the lock screen itself, for two and a half seconds. */
+    private fun say(sentence: String) {
+        notice.text = sentence.uppercase()
+        notice.visibility = View.VISIBLE
+        notice.removeCallbacks(hideNotice)
+        notice.postDelayed(hideNotice, 2500)
+    }
+
+    private val hideNotice = Runnable { notice.visibility = View.GONE }
+
+    /** A corner button set up for what it does. */
+    private fun corner(what: String, accent: Int): CornerButton {
+        val key = Corners.appKey(what)
+        val b = CornerButton(this, if (what == Corners.TORCH) CornerButton.TORCH else CornerButton.CAMERA, accent)
+        when {
+            what == Corners.OFF -> b.visibility = View.GONE
+            key != null -> {
+                b.sprite = icons.get(key)
+                b.contentDescription = "Open ${NoteCards.appName(this, key.pkg)}"
+                hold(b) { openApp(key) }
+            }
+            what == Corners.TORCH -> {
+                torchButtons += b
+                b.contentDescription = "Flashlight"
+                hold(b) { torch.toggle() }
+            }
+            else -> {
+                b.contentDescription = "Camera"
+                hold(b) { openCamera() }
+            }
+        }
+        return b
+    }
+
+    /**
+     * Press and hold to use [button]: it fills up as you hold, then fires. A quick tap says to
+     * hold; sliding off cancels. It keeps the touch, so the swipe-to-unlock can't steal it.
+     */
+    private fun hold(button: CornerButton, action: () -> Unit) {
+        var anim: android.animation.ValueAnimator? = null
+        var fired = false
+        var downX = 0f
+        var downY = 0f
+        val slop = ViewConfiguration.get(this).scaledTouchSlop * 2
+        fun cancel() {
+            anim?.cancel()
+            anim = null
+            button.progress = 0f
+        }
+        button.setOnTouchListener { v, e ->
+            when (e.actionMasked) {
+                MotionEvent.ACTION_DOWN -> {
+                    v.parent?.requestDisallowInterceptTouchEvent(true)
+                    fired = false
+                    downX = e.x; downY = e.y
+                    anim = android.animation.ValueAnimator.ofFloat(0f, 1f).apply {
+                        duration = 450
+                        addUpdateListener { button.progress = it.animatedValue as Float }
+                        addListener(object : android.animation.AnimatorListenerAdapter() {
+                            private var cancelled = false
+                            override fun onAnimationCancel(animation: android.animation.Animator) { cancelled = true }
+                            override fun onAnimationEnd(animation: android.animation.Animator) {
+                                if (cancelled || fired) return
+                                fired = true
+                                button.performHapticFeedback(android.view.HapticFeedbackConstants.LONG_PRESS)
+                                button.progress = 0f
+                                action()
+                            }
+                        })
+                        start()
+                    }
+                }
+                MotionEvent.ACTION_MOVE -> if (!fired && (kotlin.math.abs(e.x - downX) > slop || kotlin.math.abs(e.y - downY) > slop)) cancel()
+                MotionEvent.ACTION_UP -> {
+                    if (!fired) {
+                        cancel()
+                        say("Hold to use")
+                    }
+                }
+                MotionEvent.ACTION_CANCEL -> cancel()
+            }
             true
         }
-        button.setOnClickListener { Pixel.say(this, "Hold to use.") }
+    }
+
+    /** An app chosen for a corner: it opens as soon as you've unlocked (Android won't show apps over the lock screen). */
+    private fun openApp(key: AppKey) {
+        val then = {
+            try {
+                val users = getSystemService(android.os.UserManager::class.java)
+                val user = users.getUserForSerialNumber(key.user) ?: throw IllegalStateException()
+                getSystemService(android.content.pm.LauncherApps::class.java)
+                    .startMainActivity(android.content.ComponentName(key.pkg, key.cls), user, null, null)
+            } catch (e: Exception) {
+                Pixel.say(this, "That app can't be opened. It may have been uninstalled.")
+            }
+            leave()
+        }
+        val keyguard = getSystemService(KeyguardManager::class.java)
+        if (!keyguard.isKeyguardLocked) then() else host.dismissKeyguard(then, ::resetSwipe)
     }
 
     /** The camera, without unlocking: Android's secure camera mode while locked. */
@@ -475,7 +581,7 @@ class LockScreen(base: Context, private val host: LockHost) : android.content.Co
             leaving = true
             host.close()
         } catch (e: Exception) {
-            Pixel.say(this, "No camera app could open from the lock screen.")
+            say("No camera app could open from the lock screen.")
         }
     }
 

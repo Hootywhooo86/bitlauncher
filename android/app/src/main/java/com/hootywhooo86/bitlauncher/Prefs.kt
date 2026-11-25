@@ -249,6 +249,14 @@ class Prefs(context: Context) {
         get() = sp.getString("pixelDetail", "fine")!!
         set(v) = sp.edit().putString("pixelDetail", v).apply()
 
+    /** Lock screen corners: "torch", "camera", "off" or "app:pkg|cls|user" (see Corners). */
+    var lockLeft: String
+        get() = sp.getString("lockLeft", Corners.TORCH)!!
+        set(v) = sp.edit().putString("lockLeft", v).apply()
+    var lockRight: String
+        get() = sp.getString("lockRight", Corners.CAMERA)!!
+        set(v) = sp.edit().putString("lockRight", v).apply()
+
     /** How app icons look (see IconStyles.ALL). */
     var iconStyle: String
         get() = sp.getString("iconStyle", "sprite")!!
@@ -307,6 +315,8 @@ class Prefs(context: Context) {
         .put("lockWallpaper", lockWallpaper)
         .put("clockFont", clockFont)
         .put("iconStyle", iconStyle)
+        .put("lockLeft", lockLeft)
+        .put("lockRight", lockRight)
         .put("pixelDetail", pixelDetail)
         .put("dockStyle", dockStyle)
         .put("todayOrder", todayOrder.joinToString(","))
@@ -355,6 +365,8 @@ class Prefs(context: Context) {
         lockWallpaper = o.optBoolean("lockWallpaper", lockWallpaper)
         clockFont = o.optString("clockFont", clockFont)
         iconStyle = o.optString("iconStyle", iconStyle)
+        lockLeft = o.optString("lockLeft", lockLeft)
+        lockRight = o.optString("lockRight", lockRight)
         pixelDetail = o.optString("pixelDetail", pixelDetail)
         dockStyle = o.optString("dockStyle", dockStyle)
         o.optString("todayOrder", "").takeIf { it.isNotBlank() }?.let { todayOrder = it.split(',') }

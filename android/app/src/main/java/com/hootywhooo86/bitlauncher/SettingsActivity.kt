@@ -500,6 +500,23 @@ class SettingsActivity : Activity() {
                     PixelColorPicker(this, "Lock screen colour", prefs.lockAccentOrHome) { c -> changed { prefs.lockAccent = c } }.show()
                 },
             ))
+            for ((label, get, set) in listOf(
+                Triple("LEFT CORNER", { prefs.lockLeft }, { v: String -> prefs.lockLeft = v }),
+                Triple("RIGHT CORNER", { prefs.lockRight }, { v: String -> prefs.lockRight = v }),
+            )) {
+                body.addView(Pixel.label(this, label, 9f, Pixel.MUTED).apply { setPadding(0, Pixel.dpi(context, 12), 0, Pixel.dpi(context, 6)) })
+                val current = get()
+                val app = Corners.appKey(current)
+                row(listOf(
+                    choice("LIGHT", current == Corners.TORCH) { changed { set(Corners.TORCH) } },
+                    choice("CAMERA", current == Corners.CAMERA) { changed { set(Corners.CAMERA) } },
+                    choice("OFF", current == Corners.OFF) { changed { set(Corners.OFF) } },
+                ))
+                body.addView(choice(if (app != null) "APP: ${appLabel(app).uppercase()}" else "PICK AN APP", app != null) {
+                    pickApp { key -> changed { set(Corners.app(key)) } }
+                }.full())
+            }
+            body.addView(note("Press and hold a corner to use it; it fills up as you hold. Apps open as soon as you unlock (Android doesn't let apps show over the lock screen); the camera opens without unlocking."))
             body.addView(Pixel.label(this, "CLOCK FONT", 9f, Pixel.MUTED).apply { setPadding(0, Pixel.dpi(context, 12), 0, Pixel.dpi(context, 6)) })
             for ((key, name) in ClockFonts.ALL) {
                 body.addView(choice(name.uppercase(), prefs.clockFont == key) { changed { prefs.clockFont = key } }.full())
@@ -567,6 +584,60 @@ class SettingsActivity : Activity() {
             FamilyTheme.broadcast(this)
             recreate()
         }.full())
+    }
+
+    private fun appLabel(key: AppKey): String = try {
+        val users = getSystemService(android.os.UserManager::class.java)
+        val user = users.getUserForSerialNumber(key.user)
+        getSystemService(android.content.pm.LauncherApps::class.java).getActivityList(key.pkg, user)
+            .firstOrNull { it.componentName.className == key.cls }?.label?.toString() ?: key.pkg
+    } catch (e: Exception) {
+        key.pkg
+    }
+
+    /** Every app on the phone, A to Z, in a pixel list; [onPick] gets the one tapped. */
+    private fun pickApp(onPick: (AppKey) -> Unit) {
+        val la = getSystemService(android.content.pm.LauncherApps::class.java)
+        val users = getSystemService(android.os.UserManager::class.java)
+        val apps = try {
+            users.userProfiles.flatMap { u -> la.getActivityList(null, u).map { AppKey(it.componentName.packageName, it.componentName.className, users.getSerialNumberForUser(u)) to it.label.toString() } }
+                .sortedBy { it.second.lowercase() }
+        } catch (e: Exception) {
+            emptyList()
+        }
+        if (apps.isEmpty()) {
+            Pixel.say(this, "No apps found to pick from.")
+            return
+        }
+        val dialog = android.app.Dialog(this)
+        val icons = IconCache(this)
+        val list = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+        for ((key, name) in apps) list.addView(LinearLayout(this).apply {
+            gravity = Gravity.CENTER_VERTICAL
+            val p = Pixel.dpi(context, 10)
+            setPadding(p, p, p, p)
+            isClickable = true
+            setOnClickListener {
+                dialog.dismiss()
+                onPick(key)
+            }
+            addView(android.widget.ImageView(context).apply {
+                icons.get(key)?.let { setImageDrawable(android.graphics.drawable.BitmapDrawable(resources, it).apply { paint.isFilterBitmap = false }) }
+            }, LinearLayout.LayoutParams(Pixel.dpi(context, 32), Pixel.dpi(context, 32)).apply { rightMargin = Pixel.dpi(context, 12) })
+            addView(TextView(context).apply { text = name; setTextColor(Pixel.INK); textSize = 15f })
+        })
+        val box = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            background = PanelDrawable(context, Pixel.PANEL, prefs.accent)
+            val p = Pixel.dpi(context, 12)
+            setPadding(p, p, p, p)
+            addView(Pixel.label(context, "PICK AN APP", 11f, prefs.accent), LinearLayout.LayoutParams(-1, -2).apply { bottomMargin = Pixel.dpi(context, 8) })
+            addView(ScrollView(context).apply { addView(list) }, LinearLayout.LayoutParams(-1, Pixel.dpi(context, 420)))
+        }
+        dialog.requestWindowFeature(android.view.Window.FEATURE_NO_TITLE)
+        dialog.setContentView(box)
+        dialog.window?.setBackgroundDrawable(android.graphics.drawable.ColorDrawable(android.graphics.Color.TRANSPARENT))
+        dialog.show()
     }
 
     /** Five of your own apps in the chosen look. */
