@@ -248,6 +248,7 @@ class NotificationPanel(context: Context, private val icons: IconCache, private 
     private fun fill() {
         val notes = NotificationHub.snapshot().filter { it.key !in leaving }
         header.removeAllViews()
+        header.addView(PixelIcons.view(context, "notifications"), LinearLayout.LayoutParams(Pixel.dpi(context, 22), Pixel.dpi(context, 22)).apply { rightMargin = Pixel.dpi(context, 8) })
         header.addView(Pixel.label(context, "NOTIFICATIONS", 12f, accent), LinearLayout.LayoutParams(0, -2, 1f))
         header.addView(small("PHONE SHADE") { close(); onPhoneShade() })
         if (notes.any { it.clearable && !it.groupSummary }) header.addView(small("CLEAR ALL") { clearAll() }, LinearLayout.LayoutParams(-2, -2).apply {

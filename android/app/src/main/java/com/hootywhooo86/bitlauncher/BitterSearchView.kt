@@ -108,7 +108,7 @@ class BitterSearchView(
             }
             addView(LinearLayout(context).apply {
                 gravity = Gravity.CENTER_VERTICAL
-                addView(GlyphView(context, GlyphView.GLASS, accent), LayoutParams(Pixel.dpi(context, 20), Pixel.dpi(context, 20)).apply {
+                addView(PixelIcons.view(context, "search"), LayoutParams(Pixel.dpi(context, 26), Pixel.dpi(context, 26)).apply {
                     rightMargin = Pixel.dpi(context, 10)
                 })
                 addView(field.apply {
@@ -303,7 +303,7 @@ class HomeSearchBar(context: Context) : View(context) {
     override fun onDraw(c: Canvas) {
         if (width <= 0 || height <= 0) return
         val b = bmp ?: SearchWidgets.render(context, width, height, "BITTER SEARCHER",
-            arrayOf(".###..", "#...#.", "#...#.", "#...#.", ".###..", "....##", ".....#"), accent).also { bmp = it }
+            arrayOf(".###..", "#...#.", "#...#.", "#...#.", ".###..", "....##", ".....#"), accent, PixelIcons.get(context, "search")).also { bmp = it }
         c.drawBitmap(b, 0f, 0f, null)
     }
 }

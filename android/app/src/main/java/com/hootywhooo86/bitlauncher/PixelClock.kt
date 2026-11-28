@@ -100,6 +100,7 @@ class PixelClockView(context: Context, private val blink: Boolean) : View(contex
         val next = PixelGlyphs.digitsFor(now.get(Calendar.HOUR_OF_DAY), now.get(Calendar.MINUTE), use24)
         leading = use24
         val changed = BooleanArray(4) { digits[it] != -1 && digits[it] != next[it] }
+        previous = digits.copyOf()
         digits = next
         if (animate && changed.any { it } && Pixel.motion(context)) {
             for (i in 0..3) drop[i] = if (changed[i]) 1f else 0f
@@ -141,7 +142,9 @@ class PixelClockView(context: Context, private val blink: Boolean) : View(contex
         var x = left
         for (i in 0..3) {
             val hidden = i == 0 && skip
-            if (!hidden) drawDigit(canvas, digits[i], x, top - drop[i] * block * 3, block)
+            if (!hidden) {
+                if (font == "flap") flap(canvas, i, x, top, block) else drawDigit(canvas, digits[i], x, top - drop[i] * block * 3, block)
+            }
             x += block * PixelGlyphs.W + block
             if (i == 1) {
                 x += block // two-block gap before the colon
@@ -151,6 +154,52 @@ class PixelClockView(context: Context, private val blink: Boolean) : View(contex
                 x += block * 3
             }
         }
+    }
+
+    private var previous = intArrayOf(-1, -1, -1, -1)
+    private val card = Paint()
+
+    /**
+     * A split-flap card, like a station departure board: a dark card with a hinge across the
+     * middle. When the digit changes, the top flap falls: the old digit squashes to the hinge,
+     * then the new one unfolds from it.
+     */
+    private fun flap(canvas: Canvas, i: Int, x: Float, top: Float, block: Float) {
+        val l = x - block * 0.5f
+        val r = x + block * (PixelGlyphs.W + 0.5f)
+        // Inside the clock's own height (it's measured for the digits plus one block).
+        val t = top
+        val b = top + block * (PixelGlyphs.H + 0.6f)
+        val mid = (t + b) / 2
+        card.color = Pixel.SHADOW
+        canvas.drawRect(l + block / 3, t + block / 3, r + block / 3, b + block / 3, card)
+        card.color = blend(Pixel.PANEL, Pixel.BG, 0.3f)
+        canvas.drawRect(l, t, r, b, card)
+        card.color = blend(Pixel.PANEL, Pixel.INK, 0.06f)
+        canvas.drawRect(l, t, r, mid, card)
+        // The digit sits inside the card with a margin, like a printed flap.
+        canvas.save()
+        canvas.scale(0.82f, 0.82f, (l + r) / 2, mid)
+        val f = drop[i]
+        val old = previous[i]
+        if (f > 0f && old >= 0) {
+            // First half: the old digit's top half folds down to the hinge. Second half: the new one opens.
+            val folding = f > 0.5f
+            val d = if (folding) old else digits[i]
+            val squash = if (folding) (f - 0.5f) * 2 else (0.5f - f) * 2
+            canvas.save()
+            canvas.scale(1f, squash.coerceAtLeast(0.05f), 0f, mid)
+            drawDigit(canvas, d, x, top, block)
+            canvas.restore()
+        } else {
+            drawDigit(canvas, digits[i], x, top, block)
+        }
+        canvas.restore()
+        // The hinge: a dark line with a little pin at each end.
+        card.color = Pixel.SHADOW
+        canvas.drawRect(l, mid - block * 0.15f, r, mid + block * 0.15f, card)
+        canvas.drawRect(l - block * 0.3f, mid - block * 0.5f, l, mid + block * 0.5f, card)
+        canvas.drawRect(r, mid - block * 0.5f, r + block * 0.3f, mid + block * 0.5f, card)
     }
 
     private fun drawDigit(canvas: Canvas, d: Int, x: Float, y: Float, block: Float) {

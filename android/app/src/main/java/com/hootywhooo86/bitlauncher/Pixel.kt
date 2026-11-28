@@ -75,6 +75,12 @@ object Pixel {
         font ?: context.resources.getFont(R.font.silkscreen).also { font = it }
 
     fun dp(context: Context, v: Float): Float = v * context.resources.displayMetrics.density
+
+    /**
+     * One art pixel for frames, borders and boxes: 2dp when chunky, 1.25dp when fine (the 128
+     * look), so panels and lock screen art get finer along with the icons.
+     */
+    fun block(context: Context): Float = dp(context, if (IconCache.SIZE > 32) 1.25f else 2f)
     fun dpi(context: Context, v: Int): Int = (v * context.resources.displayMetrics.density + 0.5f).toInt()
 
     /** A pixel-font label. */
@@ -117,7 +123,7 @@ object Pixel {
  * Drawn with plain rects, so it's cheap and stays crisp at any size.
  */
 class PanelDrawable(context: Context, var fill: Int, var border: Int, private val shadow: Boolean = true) : Drawable() {
-    private val px = Pixel.dp(context, 2f)
+    private val px = Pixel.block(context)
     private val paint = Paint()
 
     override fun draw(canvas: Canvas) {
@@ -182,5 +188,25 @@ object Ease {
         val byDistance = 300f * (remainingPx / totalPx.coerceAtLeast(1f))
         val byVelocity = if (velocityPxPerSec > 1f) remainingPx / velocityPxPerSec * 1000f * 1.6f else Float.MAX_VALUE
         return minOf(byDistance, byVelocity).coerceIn(120f, 320f).toLong()
+    }
+}
+
+/** bitlauncher's own 64x64 pixel icons (res/drawable-nodpi/px_icon_*.png), loaded once, never smoothed. */
+object PixelIcons {
+    private val cache = HashMap<String, android.graphics.Bitmap>()
+
+    fun get(context: Context, name: String): android.graphics.Bitmap? = synchronized(cache) {
+        cache[name] ?: run {
+            val id = context.resources.getIdentifier("px_icon_$name", "drawable", context.packageName)
+            if (id == 0) return null
+            android.graphics.BitmapFactory.decodeResource(context.resources, id, android.graphics.BitmapFactory.Options().apply { inScaled = false })
+                ?.also { cache[name] = it }
+        }
+    }
+
+    /** An ImageView showing [name], scaled up with hard pixel edges. */
+    fun view(context: Context, name: String): android.widget.ImageView = android.widget.ImageView(context).apply {
+        get(context, name)?.let { setImageDrawable(android.graphics.drawable.BitmapDrawable(context.resources, it).apply { paint.isFilterBitmap = false }) }
+        scaleType = android.widget.ImageView.ScaleType.FIT_CENTER
     }
 }

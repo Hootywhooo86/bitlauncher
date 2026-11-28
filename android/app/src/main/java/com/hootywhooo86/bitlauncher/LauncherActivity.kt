@@ -260,7 +260,7 @@ class LauncherActivity : Activity() {
         workspace.listener = object : Workspace.Listener {
             override fun onDrawerDrag(px: Float) = dragDrawer(px)
             override fun onDrawerRelease(px: Float, velocityY: Float) = releaseDrawer(velocityY)
-            override fun onSwipeDown() = openNotifications()
+            override fun onSwipeDown() = gesture(prefs.gestureDown)
             override fun onEmptyLongPress(x: Float, y: Float) = showHomeMenu(x - workspace.scrollX, y)
             override fun onPageChanged(page: Int) {
                 dots.current = page / workspace.panes
@@ -268,8 +268,8 @@ class LauncherActivity : Activity() {
 
             override fun onTodayDrag(px: Float) = dragToday(px)
             override fun onTodayRelease(px: Float, velocityX: Float) = releaseToday(px, velocityX)
-            override fun onDoubleTap() = doubleTap()
-            override fun onPinchIn() = openPages()
+            override fun onDoubleTap() = gesture(prefs.gestureDouble)
+            override fun onPinchIn() = gesture(prefs.gesturePinch)
             override fun stackAt(x: Float, y: Float) = stackFlipAt(x, y)
             override fun iconSwipeAt(x: Float, y: Float) = swipeActionAt(x, y)
         }
@@ -556,17 +556,23 @@ class LauncherActivity : Activity() {
 
     /** Dots on every icon (and folder) whose app has something new. Only redraws what changed. */
     private fun refreshDots() {
-        val with = if (prefs.dots) NotificationHub.appsWithDots() else emptySet()
-        fun dotFor(tag: Any?): Boolean = when (tag) {
-            is AppKey -> "${tag.pkg}/${tag.user}" in with
-            is FolderItem -> tag.apps.any { "${it.pkg}/${it.user}" in with }
-            else -> false
+        val counts = if (prefs.dots) NotificationHub.dotCounts() else emptyMap()
+        val numbers = prefs.dotNumbers
+        fun countFor(tag: Any?): Int = when (tag) {
+            is AppKey -> counts["${tag.pkg}/${tag.user}"] ?: 0
+            is FolderItem -> tag.apps.sumOf { counts["${it.pkg}/${it.user}"] ?: 0 }
+            else -> 0
+        }
+        fun apply(v: AppIconView) {
+            val n = countFor(v.tagItem)
+            v.hasDot = n > 0
+            v.dotCount = if (numbers) n else 0
         }
         for (i in 0 until workspace.pageCount) {
             val page = workspace.page(i) ?: continue
-            for (j in 0 until page.childCount) (page.getChildAt(j) as? AppIconView)?.let { it.hasDot = dotFor(it.tagItem) }
+            for (j in 0 until page.childCount) (page.getChildAt(j) as? AppIconView)?.let(::apply)
         }
-        for (j in 0 until dock.childCount) (dock.getChildAt(j) as? AppIconView)?.let { it.hasDot = dotFor(it.tagItem) }
+        for (j in 0 until dock.childCount) (dock.getChildAt(j) as? AppIconView)?.let(::apply)
     }
 
     /** A landed icon swells slightly and settles into place, so you can see the drop worked. */
@@ -1311,8 +1317,28 @@ class LauncherActivity : Activity() {
 
     // ---------------------------------------------------------------- gestures
 
-    private fun doubleTap() {
-        if (!prefs.doubleTapLock) return
+    private val homeTorch by lazy { Torch(this) {} }
+
+    /** Run what a gesture is set to do (see Gestures.ACTIONS). */
+    private fun gesture(action: String) {
+        Gestures.appKey(action)?.let { key ->
+            launch(key, null)
+            return
+        }
+        when (action) {
+            Gestures.NOTIFICATIONS -> openNotifications()
+            Gestures.SHADE -> openPhoneShade()
+            Gestures.SEARCH -> startActivity(Intent(this, SearchActivity::class.java).putExtra(SearchActivity.EXTRA_MODE, "search"))
+            Gestures.DRAWER -> openDrawer()
+            Gestures.PAGES -> openPages()
+            Gestures.LOCK -> lockNow()
+            Gestures.TORCH -> homeTorch.toggle()
+            Gestures.HIDDEN -> HiddenVault.open(this)
+            else -> {}
+        }
+    }
+
+    private fun lockNow() {
         if (LockService.lock()) return
         if (Build.VERSION.SDK_INT < 28) {
             Pixel.say(this, "Double-tap to lock needs Android 9 or newer.")
@@ -2341,6 +2367,7 @@ class LauncherActivity : Activity() {
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
         @Suppress("DEPRECATION")
         super.onActivityResult(requestCode, resultCode, data)
+        HiddenVault.onResult(requestCode, resultCode == RESULT_OK)
         when (requestCode) {
             REQ_BIND -> if (resultCode == RESULT_OK) configureWidget() else {
                 cancelWidget()

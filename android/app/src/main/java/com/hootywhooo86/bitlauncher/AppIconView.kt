@@ -132,6 +132,10 @@ class AppIconView(context: Context) : View(context) {
     var hasDot = false
         set(v) { if (field != v) { field = v; invalidate() } }
 
+    /** How many notifications, shown as a number on the dot; 0 shows a plain dot. */
+    var dotCount = 0
+        set(v) { if (field != v) { field = v; invalidate() } }
+
     /** Called when, after a long press, the finger moves: time to start dragging. */
     var onDragOut: ((AppIconView) -> Unit)? = null
 
@@ -304,9 +308,25 @@ class AppIconView(context: Context) : View(context) {
             countPaint.color = Pixel.BG
             canvas.drawText(text, l + p * 1.5f, b - p * 2f, countPaint)
         }
-        if (hasDot) {
+        if (hasDot && dotCount > 0) {
+            // A pixel badge with the count, outlined so it reads on any icon.
+            val text = if (dotCount > 9) "9+" else dotCount.toString()
+            val o = Pixel.dp(context, 1.5f)
+            countPaint.textSize = Pixel.dp(context, 9f)
+            val tw = countPaint.measureText(text)
+            val h = countPaint.textSize + o * 4
+            val w = maxOf(h, tw + o * 5)
+            val right = r.right.toFloat() + o * 2
+            val top = r.top.toFloat() - o * 2
+            dotPaint.color = Pixel.SHADOW
+            canvas.drawRect(right - w, top, right, top + h, dotPaint)
+            dotPaint.color = accent
+            canvas.drawRect(right - w + o, top + o, right - o, top + h - o, dotPaint)
+            countPaint.color = Pixel.BG
+            canvas.drawText(text, right - w + (w - tw) / 2f, top + h - o * 2.6f, countPaint)
+        } else if (hasDot) {
             // A 3x3 sprite-pixel square on the top-right corner, outlined so it reads on any icon.
-            val p = r.width() / IconCache.SIZE.toFloat()
+            val p = r.width() / IconCache.SIZE.toFloat() * (IconCache.SIZE / 32)
             val size = p * 5
             val right = r.right.toFloat()
             val top = r.top.toFloat()

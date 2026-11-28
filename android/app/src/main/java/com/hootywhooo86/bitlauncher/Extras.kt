@@ -18,7 +18,7 @@ import java.util.Calendar
 /** Digit styles for the block clock. Every font is 5x7 so the clock's size never changes. */
 object ClockFonts {
     /** (key, name). */
-    val ALL = listOf("blocks" to "Blocks", "round" to "Rounded", "arcade" to "Arcade", "lcd" to "LCD segments")
+    val ALL = listOf("blocks" to "Blocks", "round" to "Rounded", "arcade" to "Arcade", "lcd" to "LCD segments", "flap" to "Split-flap")
 
     private val ROUND = arrayOf(
         arrayOf(".###.", "#...#", "#...#", "#...#", "#...#", "#...#", ".###."),
@@ -72,6 +72,7 @@ object ClockFonts {
         "round" -> ROUND
         "arcade" -> ARCADE
         "lcd" -> LCD
+        "flap" -> ROUND
         else -> PixelGlyphs.DIGITS
     }
 }
@@ -157,7 +158,7 @@ class TicketReceiver : BroadcastReceiver() {
  * of both edges at the perforation.
  */
 class TicketDrawable(context: Context, private val fill: Int, private val edge: Int, private val stubW: Float) : Drawable() {
-    private val b = Pixel.dp(context, 2f)
+    private val b = Pixel.block(context)
     private val p = Paint()
 
     override fun draw(c: Canvas) {
@@ -315,4 +316,26 @@ object Corners {
         if (parts.size != 3) return null
         return AppKey(parts[0], parts[1], parts[2].toLongOrNull() ?: return null)
     }
+}
+
+/** What a home gesture can do. */
+object Gestures {
+    const val NOTIFICATIONS = "notifications"
+    const val SHADE = "shade"
+    const val SEARCH = "search"
+    const val DRAWER = "drawer"
+    const val PAGES = "pages"
+    const val LOCK = "lock"
+    const val TORCH = "torch"
+    const val HIDDEN = "hidden"
+    const val NONE = "none"
+
+    /** (key, name), in the order the settings show them. */
+    val ACTIONS = listOf(
+        NOTIFICATIONS to "Notifications", SHADE to "Phone shade", SEARCH to "Bitter Searcher", DRAWER to "All apps",
+        PAGES to "Page overview", LOCK to "Lock the screen", TORCH to "Flashlight", HIDDEN to "Hidden apps", NONE to "Nothing",
+    )
+
+    fun app(key: AppKey) = Corners.app(key)
+    fun appKey(value: String) = Corners.appKey(value)
 }

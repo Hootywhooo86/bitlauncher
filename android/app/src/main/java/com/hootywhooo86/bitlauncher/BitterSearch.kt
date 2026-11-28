@@ -54,6 +54,11 @@ class BitterSearch(private val context: Context, private val done: () -> Unit) {
             out += contacts(query)
             out += notifications(query)
             out += events(query)
+            out += FileSearch.find(context, query, prefs.searchFiles).map { f ->
+                DrawerView.Answer(f.name, "${f.kind}  ·  on this phone") {
+                    start(Intent(Intent.ACTION_VIEW).setDataAndType(f.uri, f.mime).addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION), f.name)
+                }
+            }
         }
         for (page in Search.settings(query)) out += DrawerView.Answer(page.label, "Phone settings") {
             start(Intent(page.action), "the ${page.label} settings")
@@ -354,7 +359,7 @@ object SearchWidgets {
     private val MAGNIFIER = arrayOf(".###..", "#...#.", "#...#.", "#...#.", ".###..", "....##", ".....#")
     private val GRID = arrayOf("##.##.##", "##.##.##", "........", "##.##.##", "##.##.##", "........", "##.##.##", "##.##.##")
 
-    fun render(context: Context, wPx: Int, hPx: Int, label: String, sprite: Array<String>, accent: Int): Bitmap {
+    fun render(context: Context, wPx: Int, hPx: Int, label: String, sprite: Array<String>, accent: Int, icon: Bitmap? = null): Bitmap {
         val bmp = Bitmap.createBitmap(wPx.coerceAtLeast(8), hPx.coerceAtLeast(8), Bitmap.Config.ARGB_8888)
         val c = Canvas(bmp)
         val panel = PanelDrawable(context, withAlpha(Pixel.PANEL, 235), accent)
@@ -363,6 +368,19 @@ object SearchWidgets {
         val u = (bmp.height / 14).coerceAtLeast(2).toFloat()
         val p = Paint()
         val sx = u * 3
+        if (icon != null) {
+            // The 64x64 pixel icon, a whole-number size so its pixels stay square.
+            val side = (bmp.height * 0.62f / 64).toInt().coerceAtLeast(1) * 64f
+            val top = (bmp.height - side) / 2f
+            c.drawBitmap(icon, null, android.graphics.RectF(sx, top, sx + side, top + side), Paint().apply { isFilterBitmap = false })
+            val text = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+                typeface = Pixel.font(context); color = Pixel.INK
+                textSize = (bmp.height * 0.26f).coerceAtMost(Pixel.dp(context, 16f)); letterSpacing = 0.06f
+            }
+            val tx = sx + side + u * 3
+            if (tx < bmp.width - u * 4) c.drawText(label, tx, bmp.height / 2f + text.textSize / 2.6f, text)
+            return bmp
+        }
         val sy = (bmp.height - sprite.size * u) / 2f - u * 0.5f
         p.color = accent
         for (r in sprite.indices) for (col in sprite[r].indices) if (sprite[r][col] == '#') {
@@ -387,8 +405,8 @@ object SearchWidgets {
             val o = manager.getAppWidgetOptions(id)
             val w = (o.getInt(AppWidgetManager.OPTION_APPWIDGET_MAX_WIDTH, if (mode == "apps") 110 else 280) * d).toInt()
             val h = (o.getInt(AppWidgetManager.OPTION_APPWIDGET_MIN_HEIGHT, 48) * d).toInt().coerceAtMost((72 * d).toInt())
-            val bmp = if (mode == "apps") render(context, w, h, "ALL APPS", GRID, prefs.accent)
-                else render(context, w, h, "BITTER SEARCHER", MAGNIFIER, prefs.accent)
+            val bmp = if (mode == "apps") render(context, w, h, "ALL APPS", GRID, prefs.accent, PixelIcons.get(context, "folder"))
+                else render(context, w, h, "BITTER SEARCHER", MAGNIFIER, prefs.accent, PixelIcons.get(context, "search"))
             val views = RemoteViews(context.packageName, R.layout.widget_image)
             views.setImageViewBitmap(R.id.widget_image, bmp)
             views.setContentDescription(R.id.widget_image, if (mode == "apps") "All apps" else "Bitter Searcher")
@@ -420,4 +438,43 @@ class AllAppsWidget : AppWidgetProvider() {
     override fun onUpdate(context: Context, manager: AppWidgetManager, ids: IntArray) = SearchWidgets.update(context, manager, ids, "apps")
     override fun onAppWidgetOptionsChanged(context: Context, manager: AppWidgetManager, id: Int, options: Bundle?) =
         SearchWidgets.update(context, manager, intArrayOf(id), "apps")
+}
+
+/** Photos, videos and music by name, from the phone's media store. Only with permission, only on the phone. */
+object FileSearch {
+    data class Found(val name: String, val kind: String, val uri: Uri, val mime: String)
+
+    fun permissions(): Array<String> = if (android.os.Build.VERSION.SDK_INT >= 33)
+        arrayOf(android.Manifest.permission.READ_MEDIA_IMAGES, android.Manifest.permission.READ_MEDIA_VIDEO, android.Manifest.permission.READ_MEDIA_AUDIO)
+        else arrayOf(android.Manifest.permission.READ_EXTERNAL_STORAGE)
+
+    fun allowed(c: Context) = permissions().any { c.checkSelfPermission(it) == PackageManager.PERMISSION_GRANTED }
+
+    fun find(c: Context, q: String, on: Boolean, max: Int = 4): List<Found> {
+        if (!on || q.length < 2 || !allowed(c)) return emptyList()
+        val out = mutableListOf<Found>()
+        val kinds = listOf(
+            Triple(android.provider.MediaStore.Images.Media.EXTERNAL_CONTENT_URI, "Photo", "image/*"),
+            Triple(android.provider.MediaStore.Video.Media.EXTERNAL_CONTENT_URI, "Video", "video/*"),
+            Triple(android.provider.MediaStore.Audio.Media.EXTERNAL_CONTENT_URI, "Music", "audio/*"),
+        )
+        for ((base, kind, mime) in kinds) {
+            if (out.size >= max) break
+            try {
+                c.contentResolver.query(
+                    base,
+                    arrayOf(android.provider.MediaStore.MediaColumns._ID, android.provider.MediaStore.MediaColumns.DISPLAY_NAME),
+                    "${android.provider.MediaStore.MediaColumns.DISPLAY_NAME} LIKE ?",
+                    arrayOf("%$q%"),
+                    "${android.provider.MediaStore.MediaColumns.DATE_MODIFIED} DESC",
+                )?.use { cur ->
+                    while (cur.moveToNext() && out.size < max) {
+                        out += Found(cur.getString(1) ?: continue, kind, ContentUris.withAppendedId(base, cur.getLong(0)), mime)
+                    }
+                }
+            } catch (e: Exception) {
+            }
+        }
+        return out
+    }
 }

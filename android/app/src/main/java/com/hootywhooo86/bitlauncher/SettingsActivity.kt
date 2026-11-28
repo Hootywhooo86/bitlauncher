@@ -132,6 +132,15 @@ class SettingsActivity : Activity() {
             choice("ON", prefs.homeSearchBar) { changed { prefs.homeSearchBar = true } },
             choice("OFF", !prefs.homeSearchBar) { changed { prefs.homeSearchBar = false } },
         ))
+        body.addView(Pixel.label(this, "SEARCH YOUR FILES", 9f, Pixel.MUTED).apply { setPadding(0, Pixel.dpi(context, 10), 0, Pixel.dpi(context, 6)) })
+        row(listOf(
+            choice("ON", prefs.searchFiles && FileSearch.allowed(this)) {
+                if (FileSearch.allowed(this)) changed { prefs.searchFiles = true }
+                else requestPermissions(FileSearch.permissions(), REQ_FILES)
+            },
+            choice("OFF", !(prefs.searchFiles && FileSearch.allowed(this))) { changed { prefs.searchFiles = false } },
+        ))
+        body.addView(note("Find photos, videos and music by name. Read on this phone only; nothing is uploaded. Off until you allow it."))
         body.addView(Pixel.button(this, "TRY IT", accent) {
             startActivity(Intent(this, SearchActivity::class.java).putExtra(SearchActivity.EXTRA_MODE, "search"))
         }.full())
@@ -285,12 +294,21 @@ class SettingsActivity : Activity() {
 
         section("GESTURES")
         body.addView(note("Swipe up on a folder to open its first app. Swipe up on an app to run a shortcut you pick (hold the app, then Swipe up action)."))
-        body.addView(Pixel.label(this, "DOUBLE-TAP TO LOCK", 9f, Pixel.MUTED).apply { setPadding(0, Pixel.dpi(context, 8), 0, Pixel.dpi(context, 6)) })
-        row(listOf(
-            choice("ON", prefs.doubleTapLock) { changed { prefs.doubleTapLock = true } },
-            choice("OFF", !prefs.doubleTapLock) { changed { prefs.doubleTapLock = false } },
-        ))
-        if (prefs.doubleTapLock && !LockService.isEnabled(this)) {
+        for ((label, get, set) in listOf(
+            Triple("SWIPE DOWN", { prefs.gestureDown }, { v: String -> prefs.gestureDown = v }),
+            Triple("DOUBLE-TAP", { prefs.gestureDouble }, { v: String -> prefs.gestureDouble = v; prefs.doubleTapLock = v == Gestures.LOCK }),
+            Triple("PINCH", { prefs.gesturePinch }, { v: String -> prefs.gesturePinch = v }),
+        )) {
+            val current = get()
+            val app = Gestures.appKey(current)
+            body.addView(Pixel.label(this, label, 9f, Pixel.MUTED).apply { setPadding(0, Pixel.dpi(context, 10), 0, Pixel.dpi(context, 6)) })
+            body.addView(choice((if (app != null) "APP: ${appLabel(app)}" else Gestures.ACTIONS.firstOrNull { it.first == current }?.second ?: "Nothing").uppercase() + "  ▼", true) {
+                val entries = Gestures.ACTIONS.map { (key, name) -> name.uppercase() to { changed { set(key) } } } +
+                    ("AN APP..." to { pickApp { k -> changed { set(Gestures.app(k)) } } })
+                chooseFrom(label, entries)
+            }.full())
+        }
+        if (prefs.gestureDouble == Gestures.LOCK && !LockService.isEnabled(this)) {
             body.addView(note("One more step: turn on bitlauncher in Accessibility. It's only used to lock the screen, and keeps fingerprint unlock working."))
             body.addView(Pixel.button(this, "OPEN ACCESSIBILITY", accent) {
                 try {
@@ -324,18 +342,8 @@ class SettingsActivity : Activity() {
         val hidden = prefs.hidden
         if (hidden.isNotEmpty()) {
             section("HIDDEN APPS")
-            body.addView(note("Tap one to show it in the drawer again."))
-            for (id in hidden.sorted()) {
-                val pkg = id.substringBefore('/')
-                val label = try {
-                    packageManager.getApplicationLabel(packageManager.getApplicationInfo(pkg, 0)).toString()
-                } catch (e: Exception) {
-                    pkg
-                }
-                body.addView(Pixel.button(this, label, accent) {
-                    changed { prefs.hidden = prefs.hidden - id }
-                }.full())
-            }
+            body.addView(note("${hidden.size} hidden, kept behind your fingerprint or PIN. They don't show in the drawer or search. You can also set a home gesture to open them."))
+            body.addView(Pixel.button(this, "SHOW HIDDEN APPS", accent) { HiddenVault.open(this) }.full())
         }
 
         accountSection(accent)
@@ -431,7 +439,8 @@ class SettingsActivity : Activity() {
         }
         body.addView(Pixel.label(this, "DOTS ON ICONS", 9f, Pixel.MUTED).apply { setPadding(0, Pixel.dpi(context, 8), 0, Pixel.dpi(context, 6)) })
         row(listOf(
-            choice("ON", prefs.dots) { changed { prefs.dots = true } },
+            choice("NUMBERS", prefs.dots && prefs.dotNumbers) { changed { prefs.dots = true; prefs.dotNumbers = true } },
+            choice("DOTS", prefs.dots && !prefs.dotNumbers) { changed { prefs.dots = true; prefs.dotNumbers = false } },
             choice("OFF", !prefs.dots) { changed { prefs.dots = false } },
         ))
         body.addView(Pixel.label(this, "SWIPE DOWN ON HOME OPENS", 9f, Pixel.MUTED).apply { setPadding(0, Pixel.dpi(context, 14), 0, Pixel.dpi(context, 6)) })
@@ -595,6 +604,28 @@ class SettingsActivity : Activity() {
         key.pkg
     }
 
+    /** A short pixel list of choices; tapping one runs it. */
+    private fun chooseFrom(title: String, entries: List<Pair<String, () -> Unit>>) {
+        val dialog = android.app.Dialog(this)
+        val box = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            background = PanelDrawable(context, Pixel.PANEL, prefs.accent)
+            val p = Pixel.dpi(context, 12)
+            setPadding(p, p, p, p)
+            addView(Pixel.label(context, title, 11f, prefs.accent), LinearLayout.LayoutParams(-1, -2).apply { bottomMargin = Pixel.dpi(context, 8) })
+            for ((name, run) in entries) addView(Pixel.label(context, name, 11f, Pixel.INK).apply {
+                val q = Pixel.dpi(context, 12)
+                setPadding(q, q, q, q)
+                isClickable = true
+                setOnClickListener { dialog.dismiss(); run() }
+            }, LinearLayout.LayoutParams(-1, -2))
+        }
+        dialog.requestWindowFeature(android.view.Window.FEATURE_NO_TITLE)
+        dialog.setContentView(box)
+        dialog.window?.setBackgroundDrawable(android.graphics.drawable.ColorDrawable(android.graphics.Color.TRANSPARENT))
+        dialog.show()
+    }
+
     /** Every app on the phone, A to Z, in a pixel list; [onPick] gets the one tapped. */
     private fun pickApp(onPick: (AppKey) -> Unit) {
         val la = getSystemService(android.content.pm.LauncherApps::class.java)
@@ -752,6 +783,7 @@ class SettingsActivity : Activity() {
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
         @Suppress("DEPRECATION")
         super.onActivityResult(requestCode, resultCode, data)
+        HiddenVault.onResult(requestCode, resultCode == RESULT_OK)
         val uri = data?.data
         if (resultCode != RESULT_OK || uri == null) return
         when (requestCode) {
@@ -909,6 +941,10 @@ class SettingsActivity : Activity() {
 
     override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, grantResults: IntArray) {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults)
+        if (requestCode == REQ_FILES) {
+            if (FileSearch.allowed(this)) changed { prefs.searchFiles = true } else Pixel.say(this, "Files stay out of search: bitlauncher wasn't allowed to see them.")
+            return
+        }
         if (requestCode == REQ_LOCATION) {
             if (grantResults.firstOrNull() == android.content.pm.PackageManager.PERMISSION_GRANTED) changed { prefs.weather = true }
             else Pixel.say(this, "Weather stays off: bitlauncher wasn't allowed a rough location.")
@@ -922,6 +958,7 @@ class SettingsActivity : Activity() {
 
     companion object {
         private const val REQ_CONTACTS = 24
+        private const val REQ_FILES = 41
         private const val REQ_LOCATION = 25
         private const val REQ_HOME = 21
         private const val REQ_BACKUP = 22

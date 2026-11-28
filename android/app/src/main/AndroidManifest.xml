@@ -11,6 +11,11 @@
     <uses-permission android:name="android.permission.READ_MEDIA_IMAGES" />
     <uses-permission android:name="android.permission.READ_MEDIA_VISUAL_USER_SELECTED" />
     <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" android:maxSdkVersion="32" />
+    <!-- Only if you turn on file search in Bitter Searcher. Read only. -->
+    <uses-permission android:name="android.permission.READ_MEDIA_VIDEO" />
+    <uses-permission android:name="android.permission.READ_MEDIA_AUDIO" />
+    <!-- Hidden apps open only after your fingerprint, face or PIN. -->
+    <uses-permission android:name="android.permission.USE_BIOMETRIC" />
     <!-- Uninstall from the long-press menu. -->
     <uses-permission android:name="android.permission.REQUEST_DELETE_PACKAGES" />
     <!-- Only if you turn on contact search in Settings; asked for then, not before. -->

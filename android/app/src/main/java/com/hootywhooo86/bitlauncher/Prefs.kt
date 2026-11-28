@@ -257,6 +257,27 @@ class Prefs(context: Context) {
         get() = sp.getString("lockRight", Corners.CAMERA)!!
         set(v) = sp.edit().putString("lockRight", v).apply()
 
+    /** Numbers on notification dots instead of plain dots. */
+    var dotNumbers: Boolean
+        get() = sp.getBoolean("dotNumbers", true)
+        set(v) = sp.edit().putBoolean("dotNumbers", v).apply()
+
+    /** Home gestures (see Gestures.ACTIONS or an "app:" choice). */
+    var gestureDown: String
+        get() = sp.getString("gestureDown", Gestures.NOTIFICATIONS)!!
+        set(v) = sp.edit().putString("gestureDown", v).apply()
+    var gestureDouble: String
+        get() = sp.getString("gestureDouble", if (doubleTapLock) Gestures.LOCK else Gestures.NONE)!!
+        set(v) = sp.edit().putString("gestureDouble", v).apply()
+    var gesturePinch: String
+        get() = sp.getString("gesturePinch", Gestures.PAGES)!!
+        set(v) = sp.edit().putString("gesturePinch", v).apply()
+
+    /** Search your photos, videos and music by name in Bitter Searcher. Off until allowed. */
+    var searchFiles: Boolean
+        get() = sp.getBoolean("searchFiles", false)
+        set(v) = sp.edit().putBoolean("searchFiles", v).apply()
+
     /** How app icons look (see IconStyles.ALL). */
     var iconStyle: String
         get() = sp.getString("iconStyle", "sprite")!!
@@ -315,6 +336,11 @@ class Prefs(context: Context) {
         .put("lockWallpaper", lockWallpaper)
         .put("clockFont", clockFont)
         .put("iconStyle", iconStyle)
+        .put("dotNumbers", dotNumbers)
+        .put("gestureDown", gestureDown)
+        .put("gestureDouble", gestureDouble)
+        .put("gesturePinch", gesturePinch)
+        .put("searchFiles", searchFiles)
         .put("lockLeft", lockLeft)
         .put("lockRight", lockRight)
         .put("pixelDetail", pixelDetail)
@@ -365,6 +391,11 @@ class Prefs(context: Context) {
         lockWallpaper = o.optBoolean("lockWallpaper", lockWallpaper)
         clockFont = o.optString("clockFont", clockFont)
         iconStyle = o.optString("iconStyle", iconStyle)
+        dotNumbers = o.optBoolean("dotNumbers", dotNumbers)
+        gestureDown = o.optString("gestureDown", gestureDown)
+        gestureDouble = o.optString("gestureDouble", gestureDouble)
+        gesturePinch = o.optString("gesturePinch", gesturePinch)
+        searchFiles = o.optBoolean("searchFiles", searchFiles)
         lockLeft = o.optString("lockLeft", lockLeft)
         lockRight = o.optString("lockRight", lockRight)
         pixelDetail = o.optString("pixelDetail", pixelDetail)

@@ -483,6 +483,7 @@ class LockScreen(base: Context, private val host: LockHost) : android.content.Co
     private fun corner(what: String, accent: Int): CornerButton {
         val key = Corners.appKey(what)
         val b = CornerButton(this, if (what == Corners.TORCH) CornerButton.TORCH else CornerButton.CAMERA, accent)
+        b.sprite = PixelIcons.get(this, if (what == Corners.TORCH) "flashlight" else "camera")
         when {
             what == Corners.OFF -> b.visibility = View.GONE
             key != null -> {

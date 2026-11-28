@@ -51,7 +51,7 @@ object LockLooks {
  * Drawn from rects in whole blocks so it stays crisp.
  */
 class RpgBoxDrawable(context: Context, private val fill: Int, private val edge: Int, private val inner: Int) : Drawable() {
-    private val b = Pixel.dp(context, 2f)
+    private val b = Pixel.block(context)
     private val p = Paint()
 
     override fun draw(c: Canvas) {
@@ -90,7 +90,7 @@ class RpgBoxDrawable(context: Context, private val fill: Int, private val edge: 
  * [lcd] is the screen's tint; the grid is drawn over whatever the children paint.
  */
 class PocketDrawable(context: Context, private val accent: Int) : Drawable() {
-    private val b = Pixel.dp(context, 2f)
+    private val b = Pixel.block(context)
     private val p = Paint()
     val bezel = (b * 7).toInt()
 
@@ -161,7 +161,7 @@ class ScreenTexture(context: Context, grid: Boolean) : View(context) {
 /** The RPG "more to read" arrow, breathing in and out. */
 class MoreArrow(context: Context, private val ink: Int) : View(context) {
     private val p = Paint().apply { color = ink }
-    private val u = Pixel.dp(context, 2f)
+    private val u = Pixel.block(context)
     private val pulse = ValueAnimator.ofFloat(1f, 0.25f).apply {
         duration = 600
         repeatMode = ValueAnimator.REVERSE

@@ -25,7 +25,7 @@ object DockStyles {
  * edge in the accent while something is being dragged over it.
  */
 class DockDrawable(context: Context, var style: String) : Drawable() {
-    private val b = Pixel.dp(context, 2f)
+    private val b = Pixel.block(context)
     private val p = Paint()
     var highlight = false
         set(v) { field = v; invalidateSelf() }

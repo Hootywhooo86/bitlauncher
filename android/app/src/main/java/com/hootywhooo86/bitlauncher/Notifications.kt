@@ -109,6 +109,9 @@ object NotificationHub {
     /** "pkg/user" for every app with at least one countable notification. */
     fun appsWithDots(): Set<String> = snapshot().filter(NotePrivacy::countable).map { "${it.pkg}/${it.user}" }.toSet()
 
+    /** "pkg/user" to how many countable notifications it has: the numbers on icons. */
+    fun dotCounts(): Map<String, Int> = snapshot().filter(NotePrivacy::countable).groupingBy { "${it.pkg}/${it.user}" }.eachCount()
+
     fun listen(l: () -> Unit) { listeners.add(l) }
     fun unlisten(l: () -> Unit) { listeners.remove(l) }
 

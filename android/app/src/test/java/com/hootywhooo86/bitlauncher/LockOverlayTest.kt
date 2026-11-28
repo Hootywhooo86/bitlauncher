@@ -381,3 +381,77 @@ class LockCornersTest {
         Prefs(ctx).apply { lockLeft = Corners.TORCH; lockRight = Corners.CAMERA }
     }
 }
+
+@RunWith(RobolectricTestRunner::class)
+@Config(sdk = [35])
+@org.robolectric.annotation.GraphicsMode(org.robolectric.annotation.GraphicsMode.Mode.NATIVE)
+class Release19Test {
+    private val ctx get() = org.robolectric.RuntimeEnvironment.getApplication()
+
+    @Test
+    fun dotCountsCountOnlyRealNotifications() {
+        NotificationHub.replaceAll(listOf(
+            Note("a", "chat", 0, "Sam", "Hi", 0, null, null, false, false, 1L),
+            Note("b", "chat", 0, "Alex", "Yo", 0, null, null, false, false, 2L),
+            Note("c", "chat", 0, "2 new", "", 0, null, null, false, true, 3L), // group header: not counted
+            Note("d", "music", 0, "Playing", "", 0, null, null, true, false, 4L), // ongoing: not counted
+        ))
+        assertEquals(mapOf("chat/0" to 2), NotificationHub.dotCounts())
+        NotificationHub.replaceAll(emptyList())
+    }
+
+    @Test
+    fun gesturesHaveDefaultsAndRemember() {
+        val prefs = Prefs(ctx)
+        assertEquals(Gestures.NOTIFICATIONS, prefs.gestureDown)
+        assertEquals(Gestures.PAGES, prefs.gesturePinch)
+        val key = AppKey("com.example.maps", "Main", 0)
+        prefs.gestureDouble = Gestures.app(key)
+        assertEquals(key, Gestures.appKey(prefs.gestureDouble))
+        val saved = prefs.toJson()
+        prefs.gestureDouble = Gestures.NONE
+        prefs.restore(saved)
+        assertEquals(Gestures.app(key), prefs.gestureDouble)
+        prefs.gestureDouble = Gestures.NONE
+    }
+
+    @Test
+    fun fileSearchStaysOffWithoutPermission() {
+        assertTrue(FileSearch.find(ctx, "beach", on = true).isEmpty())
+        assertTrue(FileSearch.find(ctx, "beach", on = false).isEmpty())
+    }
+
+    @Test
+    fun hiddenVaultSaysHowToHideWhenEmpty() {
+        val activity = Robolectric.buildActivity(android.app.Activity::class.java).setup().get()
+        Prefs(ctx).hidden = emptySet()
+        HiddenVault.open(activity) // nothing to show: says so, doesn't crash
+        assertEquals("No hidden apps. In the app drawer, hold an app and choose Hide from drawer.", org.robolectric.shadows.ShadowToast.getTextOfLatestToast())
+    }
+
+    @Test
+    fun splitFlapClockDrawsCardsAndFlips() {
+        val v = PixelClockView(ctx, blink = false).apply { font = "flap" }
+        v.measure(View.MeasureSpec.makeMeasureSpec(900, View.MeasureSpec.EXACTLY), View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED))
+        v.layout(0, 0, v.measuredWidth, v.measuredHeight)
+        v.update(animate = false)
+        val b = android.graphics.Bitmap.createBitmap(v.width, v.height.coerceAtLeast(1), android.graphics.Bitmap.Config.ARGB_8888)
+        b.eraseColor(Pixel.BG)
+        v.draw(android.graphics.Canvas(b))
+        // The cards are drawn: there are card-coloured pixels, not just background.
+        val cardColour = blend(Pixel.PANEL, Pixel.BG, 0.3f)
+        var cards = 0
+        for (x in 0 until b.width step 7) for (y in 0 until b.height step 7) if (b.getPixel(x, y) == cardColour) cards++
+        assertTrue(cards > 10)
+        System.getenv("SHOT_DIR")?.let { dir -> java.io.File(dir, "clock-flap.png").outputStream().use { b.compress(android.graphics.Bitmap.CompressFormat.PNG, 100, it) } }
+    }
+
+    @Test
+    fun pixelIconsAreBundledAt64() {
+        for (n in listOf("settings", "search", "folder", "notifications", "lock", "camera", "flashlight", "weather")) {
+            val b = PixelIcons.get(ctx, n)!!
+            assertEquals(n, 64, b.width)
+            assertEquals(n, 64, b.height)
+        }
+    }
+}
