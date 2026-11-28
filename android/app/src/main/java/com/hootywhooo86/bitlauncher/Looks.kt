@@ -88,6 +88,24 @@ class DockDrawable(context: Context, var style: String) : Drawable() {
                 panel.draw(c)
             }
         }
+        if (snow) snowOn(c, l, when (style) { "glass", "wood" -> B - b * 7; "rail" -> B - b * 6; "none" -> B - b; else -> t + b * 3 }, if (style == "wood" || style == "cartridge") R - b * 2 else R)
+    }
+
+    /** Winter: snow settled along the top of the dock, in lumps. */
+    var snow = false
+        set(v) { if (field != v) { field = v; invalidateSelf() } }
+
+    private fun snowOn(c: Canvas, l: Float, top: Float, R: Float) {
+        val white = 0xFFF4F6FF.toInt()
+        val blue = 0xFFC9D3F0.toInt()
+        val cols = ((R - l) / b).toInt()
+        for (i in 0 until cols) {
+            // A fixed, lumpy profile: 1 to 3 pixels deep, never random from frame to frame.
+            val h = 1 + ((i * 7 + i / 5 * 3) % 5 + (i % 11 == 0).compareTo(false)) / 2
+            val x = l + i * b
+            rect(c, x, top - h * b, x + b, top, white)
+            rect(c, x, top, x + b, top + b, blue) // shade where it meets the shelf
+        }
     }
 
     /**

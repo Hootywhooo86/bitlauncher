@@ -237,6 +237,18 @@ class SettingsActivity : Activity() {
                 },
             ))
             body.addView(note("Sets your phone's own lock screen wallpaper to this scene, kept in step with the time of day and weather. Your home wallpaper isn't touched. Turning it off puts your phone's own wallpaper back on the lock screen."))
+            body.addView(Pixel.label(this, "SEASONS", 9f, Pixel.MUTED).apply { setPadding(0, Pixel.dpi(context, 12), 0, Pixel.dpi(context, 6)) })
+            row(listOf(
+                choice("ON", prefs.sceneSeasons) { changed { prefs.sceneSeasons = true } },
+                choice("OFF", !prefs.sceneSeasons) { changed { prefs.sceneSeasons = false } },
+            ))
+            body.addView(note("Falling leaves in autumn, a flurry and snow on the dock in winter, blossom in spring, fireflies on summer nights, fireworks on New Year's Eve. By your phone's date."))
+            body.addView(Pixel.label(this, "VISITORS", 9f, Pixel.MUTED).apply { setPadding(0, Pixel.dpi(context, 12), 0, Pixel.dpi(context, 6)) })
+            row(listOf(
+                choice("ON", prefs.sceneVisitors) { changed { prefs.sceneVisitors = true } },
+                choice("OFF", !prefs.sceneVisitors) { changed { prefs.sceneVisitors = false } },
+            ))
+            body.addView(note("Now and then something passes through: a shooting star or a plane's blinking light at night, a deer by the tracks at dawn. Rare on purpose. Paused when the phone is saving power."))
         }
 
         section("WEATHER")

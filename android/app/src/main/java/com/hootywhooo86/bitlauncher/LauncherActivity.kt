@@ -1067,6 +1067,9 @@ class LauncherActivity : Activity() {
         scene.scene = key
         scene.accent = prefs.accent
         scene.timeOfDay = prefs.sceneTime
+        scene.seasons = prefs.sceneSeasons
+        scene.visitors = prefs.sceneVisitors
+        dock.look.snow = prefs.sceneSeasons && Seasons.now() == Seasons.WINTER
         LockWallpaper.sync(this)
     }
 

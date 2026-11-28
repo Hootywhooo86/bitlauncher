@@ -100,6 +100,16 @@ class Prefs(context: Context) {
         get() = sp.getString("sceneTime", "auto")!!
         set(v) = sp.edit().putString("sceneTime", v).apply()
 
+    /** Leaves in autumn, snow on the dock in winter, blossom in spring, New Year fireworks. */
+    var sceneSeasons: Boolean
+        get() = sp.getBoolean("sceneSeasons", true)
+        set(v) = sp.edit().putBoolean("sceneSeasons", v).apply()
+
+    /** Rare visitors: a shooting star, a plane at night, a deer at dawn. */
+    var sceneVisitors: Boolean
+        get() = sp.getBoolean("sceneVisitors", true)
+        set(v) = sp.edit().putBoolean("sceneVisitors", v).apply()
+
     /** Live weather (Open-Meteo, rough location). Off until turned on. */
     var weather: Boolean
         get() = sp.getBoolean("weather", false)
@@ -370,6 +380,8 @@ class Prefs(context: Context) {
         .put("shiftEnd", shiftEnd)
         .put("scene", scene)
         .put("sceneTime", sceneTime)
+        .put("sceneSeasons", sceneSeasons)
+        .put("sceneVisitors", sceneVisitors)
         .put("weather", weather)
         .put("fahrenheit", fahrenheit)
         .put("iconPack", iconPack)
@@ -423,6 +435,8 @@ class Prefs(context: Context) {
         shiftEnd = o.optInt("shiftEnd", shiftEnd)
         scene = o.optString("scene", scene)
         sceneTime = o.optString("sceneTime", sceneTime)
+        sceneSeasons = o.optBoolean("sceneSeasons", sceneSeasons)
+        sceneVisitors = o.optBoolean("sceneVisitors", sceneVisitors)
         weather = o.optBoolean("weather", weather)
         fahrenheit = o.optBoolean("fahrenheit", fahrenheit)
         iconPack = o.optString("iconPack", iconPack)

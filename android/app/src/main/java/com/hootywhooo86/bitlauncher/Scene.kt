@@ -52,6 +52,15 @@ class SceneView(context: Context) : View(context) {
     var sunrise: Long? = null
     var sunset: Long? = null
 
+    /** Seasons and events by date, and rare visitors. */
+    val fx = SceneFx()
+    var seasons: Boolean
+        get() = fx.seasonsOn
+        set(v) { if (fx.seasonsOn != v) { fx.seasonsOn = v; updateAnimation(); invalidate() } }
+    var visitors: Boolean
+        get() = fx.visitorsOn
+        set(v) { fx.visitorsOn = v }
+
     private val paint = Paint().apply { isFilterBitmap = false; isAntiAlias = false }
     private val particlePaint = Paint()
     private val worker = Executors.newSingleThreadExecutor()
@@ -125,7 +134,9 @@ class SceneView(context: Context) : View(context) {
     private val frame = object : Runnable {
         override fun run() {
             step()
+            fx.step(isNight())
             invalidate()
+            if (!falling() && !fx.busy(isNight())) stopAnimating()
             if (animating) main.postDelayed(this, 50)
         }
     }
@@ -133,6 +144,8 @@ class SceneView(context: Context) : View(context) {
     private val tick = object : Runnable {
         override fun run() {
             if (timeBucket() != bucket) regenerate()
+            fx.season = Seasons.now()
+            maybeVisit()
             main.postDelayed(this, 60_000)
         }
     }
@@ -152,6 +165,7 @@ class SceneView(context: Context) : View(context) {
         block = max(2, Math.round(w / 160f))
         vw = (w + block - 1) / block
         vh = (h + block - 1) / block
+        fx.size(vw, vh)
         regenerate()
     }
 
@@ -171,6 +185,7 @@ class SceneView(context: Context) : View(context) {
         super.onWindowVisibilityChanged(visibility)
         if (visibility == VISIBLE) {
             if (timeBucket() != bucket) regenerate()
+            fx.season = Seasons.now()
             updateAnimation()
             // Coming home on the railway scene: a train shortly after.
             if (scene == "railway" && trainX.isNaN()) scheduleTrain(2500)
@@ -220,13 +235,27 @@ class SceneView(context: Context) : View(context) {
         }
         drawTrain(canvas)
         drawWeather(canvas)
+        fx.draw(canvas, isNight())
         canvas.restore()
     }
 
     // ---------------------------------------------------------------- weather particles
 
+    private fun isNight() = light.day < 0.3f
+    private fun isDawn() = light.warm > 0.2f && light.dayProgress < 0.3f
+    private fun falling() = sky == Sky.RAIN || sky == Sky.SNOW || sky == Sky.STORM
+
+    /** Now and then, if the scene is on screen, something passes through. */
+    fun maybeVisit(chance: Int = 8): Boolean {
+        if (windowVisibility != VISIBLE || !Pixel.motion(context) || savingPower()) return false
+        if (Random.nextInt(chance) != 0) return false
+        val went = fx.maybeVisit(isNight(), isDawn(), scene)
+        if (went) updateAnimation()
+        return went
+    }
+
     private fun updateAnimation() {
-        val falling = sky == Sky.RAIN || sky == Sky.SNOW || sky == Sky.STORM
+        val falling = falling() || fx.busy(isNight())
         if (falling && windowVisibility == VISIBLE && Pixel.motion(context) && !savingPower()) startAnimating() else stopAnimating()
     }
 

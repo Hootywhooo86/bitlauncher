@@ -6,9 +6,10 @@ import android.graphics.Paint
 import android.view.View
 
 /**
- * The lock screen's charging animation. Drawn on a grid of big pixels and ticked at about eight
- * frames a second: chunky on purpose, and cheap, since it only runs while plugged in and the
- * lock screen is showing.
+ * The lock screen's charging animation, ticked at about eight frames a second and cheap, since it
+ * only runs while plugged in and the lock screen is showing. Laid out on an 80×26 grid; with fine
+ * pixel detail each grid pixel is drawn as 2×2 real ones and the art gets the extra detail
+ * 128-style sprites have: lit edges that lean warm, shadows that lean cool, glints and bevels.
  */
 class ChargeView(context: Context) : View(context) {
     companion object {
@@ -26,7 +27,22 @@ class ChargeView(context: Context) : View(context) {
         private val LEAF_L = arrayOf("##.", ".##")
         private val LEAF_R = arrayOf(".##", "##.")
         private val FLOWER = arrayOf(".#.#.", "#####", ".###.", "#####", ".#.#.")
+        /** A lightning bolt in fine pixels (half a grid pixel each). */
+        private val BOLT = arrayOf(
+            "....####", "...####.", "...###..", "..####..", "..###...", ".#######",
+            "#######.", "...###..", "..###...", "..##....", ".##.....", ".#......",
+        )
+
+        /** Lit side of a colour: towards warm light. */
+        fun hi(c: Int) = blend(c, 0xFFFFF1C9.toInt(), 0.38f)
+        /** Shaded side: towards a cool violet, not black. */
+        fun lo(c: Int) = blend(c, 0xFF2A1F4A.toInt(), 0.38f)
     }
+
+    /** Fine pixel detail on (the default), or the original chunky grid. */
+    var fine = IconCache.SIZE > 32
+        set(v) { field = v; requestLayout(); invalidate() }
+    private val k get() = if (fine) 2 else 1
 
     var style = "battery"
         set(v) { field = v; invalidate() }
@@ -70,8 +86,8 @@ class ChargeView(context: Context) : View(context) {
 
     override fun onMeasure(widthMeasureSpec: Int, heightMeasureSpec: Int) {
         val w = MeasureSpec.getSize(widthMeasureSpec)
-        val u = (w / GRID_W).coerceAtLeast(1)
-        setMeasuredDimension(w, u * GRID_H)
+        val u = (w / (GRID_W * k)).coerceAtLeast(1)
+        setMeasuredDimension(w, u * k * GRID_H)
     }
 
     private var u = 1f
@@ -82,6 +98,28 @@ class ChargeView(context: Context) : View(context) {
         canvas?.drawRect(ox + x * u, y * u, ox + (x + w) * u, (y + h) * u, p)
     }
 
+    /** One fine pixel (half a grid pixel); nothing when detail is chunky. */
+    private fun fpx(x: Float, y: Float, color: Int, w: Float = 1f, h: Float = 1f) {
+        if (fine) px(x, y, w / 2, h / 2, color)
+    }
+
+    /** A filled block with a lit top edge and a shaded bottom edge, one fine pixel each. */
+    private fun shaded(x: Float, y: Float, w: Float, h: Float, color: Int, bevel: Boolean = false) {
+        px(x, y, w, h, color)
+        if (!fine || w < 1 || h < 1) return
+        fpx(x, y, hi(color), w * 2, 1f)
+        fpx(x, y + h - 0.5f, lo(color), w * 2, 1f)
+        if (bevel) {
+            fpx(x, y, hi(color), 1f, h * 2 - 1)
+            fpx(x + w - 0.5f, y + 0.5f, lo(color), 1f, h * 2 - 1)
+        }
+    }
+
+    private fun fineSprite(map: Array<String>, x: Float, y: Float, color: Int) {
+        if (!fine) return
+        for (r in map.indices) for (c in map[r].indices) if (map[r][c] == '#') fpx(x + c / 2f, y + r / 2f, color)
+    }
+
     private fun sprite(map: Array<String>, x: Float, y: Float, color: Int) {
         for (r in map.indices) for (c in map[r].indices) if (map[r][c] == '#') px(x + c, y + r, 1f, 1f, color)
     }
@@ -90,8 +128,9 @@ class ChargeView(context: Context) : View(context) {
 
     override fun onDraw(c: Canvas) {
         canvas = c
-        u = (width / GRID_W).coerceAtLeast(1).toFloat()
-        ox = (width - u * GRID_W) / 2
+        // u is the size of one grid pixel in real pixels; with fine detail it's always even.
+        u = ((width / (GRID_W * k)).coerceAtLeast(1) * k).toFloat()
+        ox = ((width - u * GRID_W) / 2).toInt().toFloat()
         val blink = tick % 2 == 0
         when (style) {
             "hearts" -> hearts(blink)
@@ -112,12 +151,27 @@ class ChargeView(context: Context) : View(context) {
         px(x + 1, y + 1, 58f, 20f, Pixel.INK)
         px(x + 2, y + 2, 56f, 18f, Pixel.BG)
         px(x + 60, y + 7, 4f, 8f, Pixel.INK) // the nub
+        if (fine) {
+            // Round the case's corners and give it a lit top and a glint.
+            for ((cx, cy) in listOf(x to y, x + 59.5f to y, x to y + 21.5f, x + 59.5f to y + 21.5f)) fpx(cx, cy, Pixel.BG)
+            fpx(x + 1, y + 1, hi(Pixel.INK), 116f, 1f)
+            fpx(x + 1, y + 20.5f, lo(Pixel.INK), 116f, 1f)
+            fpx(x + 63.5f, y + 7, lo(Pixel.INK), 1f, 16f)
+            fpx(x + 3, y + 2.5f, withAlpha(0xFFFFFFFF.toInt(), 70), 10f, 1f)
+        }
         val full = level / 10
         // Low charge shows red: that red means something, so it isn't the accent.
         val cell = if (level < 20) 0xFFE5484D.toInt() else accent
         for (i in 0 until 10) {
             val on = i < full || (charging && i == full && blink && level < 100)
-            if (on) px(x + 3 + i * 5.5f, y + 3, 4.5f, 16f, cell)
+            if (on) shaded(x + 3 + i * 5.5f, y + 3, 4.5f, 16f, cell, bevel = true)
+        }
+        if (fine && charging) {
+            // A bolt over the middle, outlined so it reads on any cell colour.
+            val bx = x + 28f
+            val by = y + 8f
+            for ((dx, dy) in listOf(-0.5f to 0f, 0.5f to 0f, 0f to -0.5f, 0f to 0.5f)) fineSprite(BOLT, bx + dx, by + dy, Pixel.SHADOW)
+            fineSprite(BOLT, bx, by, if (blink) 0xFFFFE27A.toInt() else 0xFFFFF4C2.toInt())
         }
     }
 
@@ -132,7 +186,14 @@ class ChargeView(context: Context) : View(context) {
             sprite(HEART, x + 0.6f, y + 0.6f, Pixel.SHADOW)
             sprite(HEART, x, y, empty)
             when {
-                i < full -> sprite(HEART, x, y, red)
+                i < full -> {
+                    sprite(HEART, x, y, red)
+                    // Lit lobe, glint and a cool shadow under the point.
+                    fpx(x + 1, y + 0.5f, hi(red), 2f, 1f)
+                    fpx(x + 1, y + 1, 0xFFFFFFFF.toInt())
+                    fpx(x + 5.5f, y + 2, lo(red), 1f, 3f)
+                    fpx(x + 3, y + 5.5f, lo(red), 2f, 1f)
+                }
                 i == full && level < 100 -> {
                     // The heart being filled rises from the bottom, and pulses while charging.
                     val rows = ((part / 10f) * HEART.size).toInt().coerceAtLeast(if (charging && blink) 1 else 0)
@@ -159,7 +220,7 @@ class ChargeView(context: Context) : View(context) {
         px(bx, by, 54f, 9f, Pixel.SHADOW)
         px(bx + 1, by + 1, 52f, 7f, Pixel.PANEL)
         val fill = 52f * level / 100f
-        px(bx + 1, by + 1, fill, 7f, accent)
+        shaded(bx + 1, by + 1, fill, 7f, accent)
         // A shine sweeping along the filled part.
         if (charging && fill > 4) {
             val s = (tick * 3) % (fill.toInt() + 6) - 3
@@ -195,6 +256,12 @@ class ChargeView(context: Context) : View(context) {
         px(cx - 6, bulbTop + rows, 12f, 1f, Pixel.INK)
         // Shine on the glass.
         px(cx - 6, bulbTop + 3, 1f, 3f, withAlpha(0xFFFFFFFF.toInt(), 120))
+        if (fine) {
+            fpx(cx - 5, bulbTop + 2, withAlpha(0xFFFFFFFF.toInt(), 160), 2f, 1f)
+            fpx(cx - 7, bulbTop + 6.5f, withAlpha(0xFFFFFFFF.toInt(), 90), 1f, 3f)
+            if (fillRows > 1) fpx(cx - 8, bulbTop + rows - 2, lo(accent), 32f, 2f) // deeper colour at the bottom
+            fpx(cx - 2.5f, top, hi(0xFF9A6B3F.toInt()), 10f, 1f) // the cork's lit top
+        }
         if (charging && fillRows > 2) for (k in 0 until 3) {
             val age = (tick + k * 4) % 12
             val y = bulbTop + rows - 2 - age
@@ -210,7 +277,7 @@ class ChargeView(context: Context) : View(context) {
         val cx = 40f
         // Pot.
         px(cx - 6, base - 4, 12f, 1f, 0xFF9A5B3A.toInt())
-        px(cx - 5, base - 3, 10f, 3f, 0xFF7E4A2F.toInt())
+        shaded(cx - 5, base - 3, 10f, 3f, 0xFF7E4A2F.toInt())
         px(cx - 6, base, 12f, 1f, Pixel.SHADOW)
         val green = 0xFF5FAF4E.toInt()
         val height = (2 + 16 * level / 100f).toInt()
@@ -224,6 +291,8 @@ class ChargeView(context: Context) : View(context) {
             val y = base - 7 - i * 3.5f
             val x = cx + (if (i * 3.5f + 2 > height / 2) sway else 0f)
             if (i % 2 == 0) sprite(LEAF_L, x - 3, y, green) else sprite(LEAF_R, x + 1, y, green)
+            fpx(if (i % 2 == 0) x - 3 else x + 2, y, hi(green), 2f, 1f)
+            fpx(if (i % 2 == 0) x - 1 else x + 1, y + 1.5f, lo(green), 2f, 1f)
         }
         val tipX = cx + sway
         val tipY = base - 5 - height
@@ -253,8 +322,11 @@ class ChargeView(context: Context) : View(context) {
             val c = i % cols
             val x = wx + c * cell
             val y = wy + (rowsN - 1 - r) * cell
-            px(x, y, cell - 0.5f, cell - 0.5f, shades[(r + c) % shades.size])
-            px(x, y, cell - 0.5f, 0.5f, withAlpha(0xFFFFFFFF.toInt(), 90))
+            if (fine) shaded(x, y, cell - 0.5f, cell - 0.5f, shades[(r + c) % shades.size], bevel = true)
+            else {
+                px(x, y, cell - 0.5f, cell - 0.5f, shades[(r + c) % shades.size])
+                px(x, y, cell - 0.5f, 0.5f, withAlpha(0xFFFFFFFF.toInt(), 90))
+            }
         }
         if (charging && count < cols * rowsN) {
             // The next block falls to its spot.
